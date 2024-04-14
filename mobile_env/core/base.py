@@ -92,6 +92,7 @@ class MComCore(gymnasium.Env):
         self.clock = None
         self.conn_isolines = None
         self.mb_isolines = None
+        self.sensor_isolines = None
 
         # add metrics required for visualization & set up monitor
         config["metrics"]["scalar_metrics"].update(
@@ -136,7 +137,7 @@ class MComCore(gymnasium.Env):
             # default Sensor config
             "sensor": {
                 "height": 1.5,
-                "range": 100,
+                "range": 25,
                 "velocity": 0,
             }          
         }
@@ -434,6 +435,22 @@ class MComCore(gymnasium.Env):
 
         return isolines
 
+    def sensor_range(self, num: int = 50,) -> Dict:
+        """Draw the range of the sensors with a specified number of dots"""
+        isolines = {}
+        sensor_config = self.default_config()["sensor"]
+        sensor_range = sensor_config.get("range") 
+
+        for sensor in self.sensors.values():            
+            # Generate random angles for dots within the sensor range
+            angles = np.linspace(0, 2*np.pi, num=num, endpoint=False)    
+            # Calculate coordinates of dots within the sensor range
+            x_coords = sensor.x + sensor_range * np.cos(angles)
+            y_coords = sensor.y + sensor_range * np.sin(angles)
+            isolines[sensor] = x_coords, y_coords
+
+        return isolines
+    
     def features(self) -> Dict[int, Dict[str, np.ndarray]]:
         # fix ordering of BSs for observations
         stations = sorted(
@@ -537,6 +554,9 @@ class MComCore(gymnasium.Env):
         # calculate isoline contours for BSs' 1 MB/s range
         if self.mb_isolines is None:
             self.mb_isolines = self.bs_isolines(1.0)
+        # calculate isoline contours for sensors' range
+        if self.sensor_isolines is None:
+            self.sensor_isolines = self.sensor_range(32)
 
         # set up matplotlib figure & axis configuration
         fig = plt.figure()
@@ -696,7 +716,7 @@ class MComCore(gymnasium.Env):
                 sensor.point.x,
                 sensor.point.y,
                 marker=SENSOR_SYMBOL,
-                markersize=10,
+                markersize=15,
                 markeredgewidth=0.1,
                 color="blue",
             )
@@ -710,6 +730,7 @@ class MComCore(gymnasium.Env):
                 textcoords="offset points",
                 fontsize="8",
             )
+            ax.scatter(*self.sensor_isolines[sensor], color="blue", s=3)
 
         # remove simulation axis's ticks and spines
         ax.get_xaxis().set_visible(False)
