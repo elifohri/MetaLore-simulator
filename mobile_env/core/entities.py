@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Dict
 
 from shapely.geometry import Point
 
@@ -65,14 +65,20 @@ class Sensor:
             sensor_id: int,
             pos: Tuple[float, float],
             height: float,
+            snr_tr: float,
             range: float,
             velocity: float,
+            radius: float,
+            logs: Dict[int, Tuple[float, float]],
     ):
         self.sensor_id = sensor_id
         self.x, self.y = pos
         self.height = height
+        self.snr_threshold = snr_tr
         self.range = range
-        self. velocity = velocity
+        self.velocity = velocity
+        self.radius = radius
+        self.sensor_logs = logs
 
     @property
     def point(self):

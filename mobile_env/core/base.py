@@ -137,8 +137,11 @@ class MComCore(gymnasium.Env):
             # default Sensor config
             "sensor": {
                 "height": 1.5,
+                "snr_tr": 2e-8,
                 "range": 25,
                 "velocity": 0,
+                "radius": 25,
+                "logs": {}
             }          
         }
 
