@@ -23,13 +23,6 @@ class BaseStation:
         self.height = height  # in m
         self.computational_power = computational_power  # units
 
-        # Initialize data buffers for UEs and Sensors
-        self.data_buffer_uplink_ue = self._init_job_queue()
-        self.data_buffer_uplink_sensor = self._init_job_queue()
-        self.data_buffer_downlink_ue = self._init_job_queue()
-        self.data_buffer_downlink_sensor = self._init_job_queue()
-
-        # Existing buffers (if still needed)
         self.transferred_jobs_ue = self._init_job_queue()
         self.transferred_jobs_sensor = self._init_job_queue()
         self.accomplished_jobs_ue = self._init_job_queue()
@@ -41,7 +34,7 @@ class BaseStation:
 
     def __str__(self):
         return f"BS: {self.bs_id}"
-        
+
     def _init_job_queue(self) -> JobQueue:
         return JobQueue(size=1000)
 
