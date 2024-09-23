@@ -36,7 +36,7 @@ class BaseStation:
         return f"BS: {self.bs_id}"
 
     def _init_job_queue(self) -> JobQueue:
-        return JobQueue(size=1000)
+        return JobQueue()
 
 
 class UserEquipment:
@@ -70,7 +70,7 @@ class UserEquipment:
         return f"UE: {self.ue_id}"
     
     def _init_job_queue(self) -> JobQueue:
-        return JobQueue(size=1000)
+        return JobQueue()
 
 
 class Sensor:
@@ -104,7 +104,7 @@ class Sensor:
         return f"Sensor: {self.sensor_id}"
     
     def _init_job_queue(self) -> JobQueue:
-        return JobQueue(size=1000)
+        return JobQueue()
 
     def _initialize_sensor_logs(self, sensors: list["Sensor"]):
         for sensor in sensors:

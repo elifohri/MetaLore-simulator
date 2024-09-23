@@ -3,6 +3,11 @@ from mobile_env.core.entities import BaseStation, UserEquipment, Sensor
 from mobile_env.core.util import deep_dict_merge
 import random
 
+NUM_SENSOR = 15
+NUM_UE = 5
+MAX_DISTANCE = 100
+MIN_DISTANCE = 5
+
 class MComSmartCity(MComCore):
     def __init__(self, config={}, render_mode=None):
         # Set unspecified parameters to default configuration
@@ -18,13 +23,13 @@ class MComSmartCity(MComCore):
         stations = self.create_stations(station_positions, config["bs"])
 
         # Initialize UEs
-        num_ues = 5
+        num_ues = NUM_UE
         ues = self.create_user_equipments(num_ues, config["ue"])
 
         # Initialize sensors
-        num_sensors = 10
-        max_distance = 90               # Maximum distance from any base station
-        min_distance = 20                # Minimum distance between sensors and between sensors and base stations
+        num_sensors = NUM_SENSOR
+        max_distance = MAX_DISTANCE                # Maximum distance from any base station
+        min_distance = MIN_DISTANCE                # Minimum distance between sensors and between sensors and base stations
         sensor_positions = self.place_sensors(num_sensors, station_positions, max_distance, min_distance)
 
         sensors = self.create_sensors(num_sensors, sensor_positions, config["sensor"])

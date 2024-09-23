@@ -74,7 +74,7 @@ class Logger:
                 for job in list(bs.transferred_jobs_ue.data_queue.queue):
                     self.log_simulation(
                         f"Time step: {self.env.time} BS: {bs.bs_id}, UE: {job['device_id']}, Job index: {job['packet_id']}, "
-                        f"Initial size: {job['initial_request_size']} MB and Computational request:{job['computation_request']} units"
+                        f"Initial size: {job['initial_request_size']} MB and Computational request: {job['computation_request']} units"
                     )
 
             # Log jobs from sensors
@@ -83,7 +83,7 @@ class Logger:
                 for job in list(bs.transferred_jobs_sensor.data_queue.queue):
                     self.log_simulation(
                         f"Time step: {self.env.time} BS: {bs.bs_id}, Sensor: {job['device_id']}, Job index: {job['packet_id']}, "
-                        f"Initial size: {job['initial_request_size']} MB and Computational request:{job['computation_request']} units"
+                        f"Initial size: {job['initial_request_size']} MB and Computational request: {job['computation_request']} units"
                     )
 
     def log_bs_accomplished_jobs_queue(self) -> None:
@@ -95,7 +95,7 @@ class Logger:
                 for job in list(bs.accomplished_jobs_ue.data_queue.queue):
                     self.log_simulation(
                         f"Time step: {self.env.time} BS: {bs.bs_id}, UE: {job['device_id']}, Job index: {job['packet_id']}, "
-                        f"Initial size: {job['initial_request_size']} MB and Computational request:{job['computation_request']} units"
+                        f"Initial size: {job['initial_request_size']} MB and Computational request: {job['computation_request']} units"
                     )
 
             # Log jobs from sensors
@@ -104,7 +104,7 @@ class Logger:
                 for job in list(bs.accomplished_jobs_sensor.data_queue.queue):
                     self.log_simulation(
                         f"Time step: {self.env.time} BS: {bs.bs_id}, Sensor: {job['device_id']}, Job index: {job['packet_id']}, "
-                        f"Initial size: {job['initial_request_size']} MB and Computational request:{job['computation_request']} units"
+                        f"Initial size: {job['initial_request_size']} MB and Computational request: {job['computation_request']} units"
                     )
 
     def log_connections(self) -> None:

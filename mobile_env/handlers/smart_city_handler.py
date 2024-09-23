@@ -28,7 +28,7 @@ class MComSmartCityHandler(Handler):
     def observation_space(cls, env) -> spaces.Box:
         """Define observation space"""
         size = cls.obs_size(env)
-        env.logger.log_reward(f"Observation size is: {size}")        
+        env.logger.log_reward(f"Time step: {env.time} Observation Space: size is {size}")        
         return spaces.Box(low=-1.0, high=1.0, shape=(size,), dtype=np.float32)
 
     @classmethod
@@ -50,20 +50,16 @@ class MComSmartCityHandler(Handler):
         
         # Gather the queue lengths (from base station)
         queue_lengths = np.array(env.get_queue_lengths()).ravel()
-        env.logger.log_reward(f"Queue lengths: {queue_lengths}")      
+        env.logger.log_reward(f"Time step: {env.time} Queue lengths: {queue_lengths}")      
 
         # Get resource utilization (bandwidth and CPU)
         resource_utilization = env.get_resource_utilization()
-        env.logger.log_reward(f"Resource utilization: {resource_utilization}")   
-
-        # Get the frequency of requests or updates
-        #request_frequency = env.get_request_frequency()   
-        #env.logger.log_reward(f"Request frequency: {request_frequency}")
+        env.logger.log_reward(f"Time step: {env.time} Resource utilization: {resource_utilization}")   
 
         # Concatenate all observations into a single array
         observation = np.concatenate([
             queue_lengths,              # 4 values
-            resource_utilization       # 2 values
+            resource_utilization        # 2 values
         ])
         
         return observation
