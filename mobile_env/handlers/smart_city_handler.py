@@ -29,7 +29,7 @@ class MComSmartCityHandler(Handler):
         """Define observation space"""
         size = cls.obs_size(env)
         env.logger.log_reward(f"Time step: {env.time} Observation Space: size is {size}")        
-        return spaces.Box(low=-1.0, high=1.0, shape=(size,), dtype=np.float32)
+        return spaces.Box(low=0.0, high=np.inf, shape=(size,), dtype=np.float32)
 
     @classmethod
     def action(cls, env, actions: Tuple[float, float]) -> Tuple[float, float]:
@@ -100,6 +100,8 @@ class MComSmartCityHandler(Handler):
         if indices_to_remove_ue_jobs:
             env.job_generator.packet_df_ue.drop(indices_to_remove_ue_jobs, inplace=True)
 
+        env.logger.log_reward(f"Time step: {env.time} Total reward applied at this time step: {total_reward}.")
+        
         return total_reward
     
     def compute_delay(cls, env, ue_packet: pd.Series) -> float:

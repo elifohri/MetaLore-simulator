@@ -136,6 +136,13 @@ class MComCore(gymnasium.Env):
                 'delayed_ue_packets': [],
                 'delayed_sensor_packets': [],
             }
+            
+        # Initialize reward logs
+        if not hasattr(self, 'reward_logs'):
+            self.reward_logs = {
+                'time': [],
+                'rewards': []
+            }
 
         # parameters for pygame visualization
         self.window = None
@@ -147,10 +154,13 @@ class MComCore(gymnasium.Env):
         config["metrics"]["scalar_metrics"].update(
             {
                 "number connections": metrics.number_connections,
+                "number connections sensor": metrics.number_connections_sensor,
                 "number connected": metrics.number_connected,
+                "number connected sensor": metrics.number_connected_sensor,
                 "mean utility": metrics.mean_utility,
+                "mean utility sensor": metrics.mean_utility_sensor,
                 "mean datarate": metrics.mean_datarate,
-                "sensor_measurements": metrics.sensor_measurements,
+                "mean datarate sensor": metrics.mean_datarate_sensor,
             }
         )
         self.monitor = Monitor(**config["metrics"])
@@ -327,6 +337,9 @@ class MComCore(gymnasium.Env):
         # initially not all UEs request downlink connections (service)
         self.active = [ue for ue in self.users.values() if ue.stime <= 0]
         self.active = sorted(self.active, key=lambda ue: ue.ue_id)
+        
+        self.active_sensor = [sensor for sensor in self.sensors.values()]
+        self.active_sensor = sorted(self.active_sensor, key=lambda sensor: sensor.sensor_id)
 
         # reset established downlink connections (default empty set)
         self.connections = defaultdict(set)
@@ -366,6 +379,11 @@ class MComCore(gymnasium.Env):
             'delayed_ue_packets': [],
             'delayed_sensor_packets': [],
         }
+        
+        self.reward_logs = {
+            'time': [],
+            'rewards': []
+        }
 
         # set time of last UE's departure
         self.max_departure = max(ue.extime for ue in self.users.values())
@@ -382,10 +400,6 @@ class MComCore(gymnasium.Env):
         info = self.handler.info(self)
         # store latest monitored results in `info` dictionary
         info = {**info, **self.monitor.info()}
-
-        # #reset the sensor's logs 
-        # for sensor in self.sensors.values():
-        #     sensor.logs.clear()
 
         # Return initial observation
         obs = self.handler.observation(self)
@@ -582,6 +596,7 @@ class MComCore(gymnasium.Env):
         # update macro (aggregated) data rates for each UE
         # TODO: check if this is necessary
         self.macro = self.macro_datarates(self.datarates)
+        self.macro_sensor = self.macro_datarates_sensor(self.datarates_sensor)
 
         # logging datarates
         self.logger.log_all_datarates()
@@ -612,19 +627,30 @@ class MComCore(gymnasium.Env):
         self.job_generator.log_df_sensor()
 
         # compute utilities from UEs' data rates & log its mean value
-        # TODO: DO WE NEED THIS?
         self.utilities = {
             ue: self.utility.utility(self.macro[ue]) for ue in self.active
         }
 
         # scale utilities to range [-1, 1] before computing rewards
-        # TODO: DO WE NEED THIS?
         self.utilities = {
             ue: self.utility.scale(util) for ue, util in self.utilities.items()
+        }
+        
+        # compute utilities from sensor's data rates & log its mean value
+        self.utilities_sensor = {
+            sensor: self.utility.utility(self.macro_sensor[sensor]) for sensor in self.active_sensor
+        }
+
+        # scale utilities to range [-1, 1] before computing rewards
+        self.utilities_sensor = {
+            sensor: self.utility.scale(util) for sensor, util in self.utilities_sensor.items()
         }
 
         # compute rewards
         rewards = self.handler.reward(self)
+        
+        # log rewards
+        self.log_rewards(rewards)
 
         # check all the e2e delay threshold for all jobs
         delayed_ue_jobs, delayed_sensor_jobs = self.check_packet_delays()
@@ -654,6 +680,15 @@ class MComCore(gymnasium.Env):
                 if ue.extime > self.time and ue.stime <= self.time
             ],
             key=lambda ue: ue.ue_id,
+        )
+        
+                # update list of active sensors & add those that begin to request service
+        self.active_sensor = sorted(
+            [
+                sensor
+                for sensor in self.sensors.values()
+            ],
+            key=lambda sensor: sensor.sensor_id,
         )
 
         # update internal time of environment
@@ -702,6 +737,14 @@ class MComCore(gymnasium.Env):
         for (bs, ue), datarate in self.datarates.items():
             ue_datarates.update({ue: datarate + epsilon})
         return ue_datarates
+    
+    def macro_datarates_sensor(self, datarates_sensor):
+        """Compute aggregated sensor data rates given all its connections."""
+        epsilon = 1e-10  # Small value to prevent zero data rates
+        sensor_datarates = Counter()
+        for (bs, sensor), datarate in self.datarates_sensor.items():
+            sensor_datarates.update({sensor: datarate + epsilon})
+        return sensor_datarates
 
     def station_allocation(self, bs: BaseStation, bandwidth_for_ues: float) -> Dict:
         """Schedule BS's resources (e.g. phy. res. blocks) to connected UEs."""
@@ -777,6 +820,22 @@ class MComCore(gymnasium.Env):
             bs: sum(self.utilities[ue] for ue in self.connections[bs])
             / len(self.connections[bs])
             if self.connections[bs]
+            else idle
+            for bs in self.stations.values()
+        }
+
+        return util
+    
+    def station_utilities_sensor(self) -> Dict[BaseStation, Sensor]:
+        """Compute average utility of sensors connected to the basestation."""
+        # set utility of BS with no active connections (idle BS) to
+        # (scaled) lower utility bound
+        idle = self.utility_sensor.scale(self.utility.lower)
+
+        util = {
+            bs: sum(self.utilities_sensor[sensor] for sensor in self.connections_sensor[bs])
+            / len(self.connections_sensor[bs])
+            if self.connections_sensor[bs]
             else idle
             for bs in self.stations.values()
         }
@@ -884,6 +943,7 @@ class MComCore(gymnasium.Env):
         obs.update({ue.ue_id: ue_features(ue) for ue in self.active})
 
         return obs
+
 
     def get_queue_lengths(self):
         # Return queue lengths from the base station for transferred jobs and accomplished jobs
@@ -1166,6 +1226,7 @@ class MComCore(gymnasium.Env):
         ax.set_xlim([0.0, self.EP_MAX_TIME])
         ax.set_ylim([0.0, len(self.users)])
 
+
     def log_resource_allocations(self, bandwidth_allocation, computational_allocation):
         """Logs the current resource allocation status of all entities."""
         self.resource_allocation_logs['time'].append(self.time)    
@@ -1203,6 +1264,11 @@ class MComCore(gymnasium.Env):
 
         self.delayed_packet_logs['delayed_ue_packets'].append(delayed_ue_jobs)
         self.delayed_packet_logs['delayed_sensor_packets'].append(delayed_sensor_jobs)
+
+    def log_rewards(self, reward):
+        """Logs the reward at each time step."""
+        self.reward_logs['time'].append(self.time)
+        self.reward_logs['rewards'].append(reward)
 
     def plot_resource_allocations(self):
         """Plot the resource allocations over time for each base station, each on a separate plot."""
@@ -1311,7 +1377,25 @@ class MComCore(gymnasium.Env):
         plt.legend()
         plt.show()
 
+    def plot_rewards(self):
+        """Plots the rewards over time."""
+        time_steps = self.delayed_packet_logs['time']
+                
+        plt.figure(figsize=(10, 6))
+        
+        # Plot rewards over time
+        plt.plot(time_steps, self.reward_logs['rewards'], label="Rewards", color="green", marker='o')
 
+        # Add title and labels
+        plt.title("Rewards Over Time")
+        plt.xlabel("Time Steps")
+        plt.ylabel("Rewards")
+        
+        plt.grid(True)
+        plt.legend()
+        plt.show()
+    
+    
 
     def close(self) -> None:
         """Closes the environment and terminates its visualization."""

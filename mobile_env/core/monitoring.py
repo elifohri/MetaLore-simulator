@@ -29,7 +29,7 @@ class Monitor:
     def update(self, simulation):
         """Evaluate and update metrics given the simulation state."""
 
-        # evaluate scalar, ue, bs metrics by passing the simulation state
+        # evaluate scalar, ue, bs, ss metrics by passing the simulation state
         scalar_updates = {
             name: metric(simulation) for name, metric in self.scalar_metrics.items()
         }
