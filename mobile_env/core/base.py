@@ -529,7 +529,7 @@ class MComCore(gymnasium.Env):
     def step(self, actions: Tuple[float, float]):
         assert not self.time_is_up, "step() called on terminated episode"
 
-        self.logger.log_simulation(f"Time step: {self.time} Establishing connections...")
+        #self.logger.log_simulation(f"Time step: {self.time} Establishing connections...")
 
         # connect UEs and sensors to the closest base station and establish connection
         self.connect_bs_ue()
@@ -539,32 +539,28 @@ class MComCore(gymnasium.Env):
         self.update_connections()
         self.update_connections_sensors()
 
-        # update UE positions in sensor logs
-        #TODO: check the function, if it is working properly
-        #self.update_sensor_logs()
-
         # Logging base station connections
-        self.logger.log_all_connections()
+        #self.logger.log_all_connections()
 
         # Generate jobs for each UE and sensor
-        self.logger.log_simulation(f"Time step: {self.time} Job generation starting...")
+        #self.logger.log_simulation(f"Time step: {self.time} Job generation starting...")
 
         for ue in self.users.values():
             self.job_generator.generate_job_ue(ue)
         for sensor in self.sensors.values():
             self.job_generator.generate_job_sensor(sensor)
 
-        self.logger.log_simulation(f"Time step: {self.time} Job generation terminated...")
+        #self.logger.log_simulation(f"Time step: {self.time} Job generation terminated...")
 
         # Log sensor and ue data queues
-        self.logger.log_all_queues()
+        #self.logger.log_all_queues()
 
         # apply handler to transform actions to expected shape
         bandwidth_allocation, computational_allocation = self.handler.action(self, actions)
 
-        self.logger.log_simulation(f"Time step: {self.time} Action applied...")
-        self.logger.log_simulation(f"Time step: {self.time} Communication resource allocation to UEs in percentage: {bandwidth_allocation * 100:.2f} %")
-        self.logger.log_simulation(f"Time step: {self.time} Computation resource allocation to UEs in percentage: {computational_allocation * 100:.2f} %")
+        #self.logger.log_simulation(f"Time step: {self.time} Action applied...")
+        #self.logger.log_simulation(f"Time step: {self.time} Communication resource allocation to UEs in percentage: {bandwidth_allocation * 100:.2f} %")
+        #self.logger.log_simulation(f"Time step: {self.time} Computation resource allocation to UEs in percentage: {computational_allocation * 100:.2f} %")
 
         # Store the resource allocations for each BS in the dictionary
         self.resource_allocations = {}
@@ -594,37 +590,36 @@ class MComCore(gymnasium.Env):
             self.datarates_sensor.update(drates_sensor)
         
         # update macro (aggregated) data rates for each UE
-        # TODO: check if this is necessary
         self.macro = self.macro_datarates(self.datarates)
         self.macro_sensor = self.macro_datarates_sensor(self.datarates_sensor)
 
         # logging datarates
-        self.logger.log_all_datarates()
+        #self.logger.log_all_datarates()
 
         # packet uplink transmission
-        self.logger.log_simulation(f"Time step: {self.time} Job transfer starting...")
+        #self.logger.log_simulation(f"Time step: {self.time} Job transfer starting...")
         self.data_transfer_manager.transfer_data_uplink()
-        self.logger.log_simulation(f"Time step: {self.time} Job transfer over...")
+        #self.logger.log_simulation(f"Time step: {self.time} Job transfer over...")
 
         # log sensor and ue data queues
-        self.logger.log_all_queues()
+        #self.logger.log_all_queues()
 
         # process data in MEC servers
-        self.logger.log_simulation(f"Time step: {self.time} Data processing starting...")
+        #self.logger.log_simulation(f"Time step: {self.time} Data processing starting...")
         self.data_process_manager.process_data_mec(computational_power_for_ues, computational_power_for_sensors)
-        self.logger.log_simulation(f"Time step: {self.time} Data processing over...")
+        #self.logger.log_simulation(f"Time step: {self.time} Data processing over...")
 
         # log sensor and ue data queues
-        self.logger.log_all_queues()
+        #self.logger.log_all_queues()
 
         # log queue sizes
         self.log_queue_sizes()
 
         # log the job data frame
-        self.logger.log_reward(f"Time step: {self.time} Data frames UE:")
-        self.job_generator.log_df_ue()
-        self.logger.log_reward(f"Time step: {self.time} Data frames Sensor:")
-        self.job_generator.log_df_sensor()
+        #self.logger.log_reward(f"Time step: {self.time} Data frames UE:")
+        #self.job_generator.log_df_ue()
+        #self.logger.log_reward(f"Time step: {self.time} Data frames Sensor:")
+        #self.job_generator.log_df_sensor()
 
         # compute utilities from UEs' data rates & log its mean value
         self.utilities = {
@@ -654,7 +649,7 @@ class MComCore(gymnasium.Env):
 
         # check all the e2e delay threshold for all jobs
         delayed_ue_jobs, delayed_sensor_jobs = self.check_packet_delays()
-        self.logger.log_simulation(f"Time step: {self.time} {delayed_ue_jobs} and {delayed_sensor_jobs}")        
+        #self.logger.log_simulation(f"Time step: {self.time} {delayed_ue_jobs} and {delayed_sensor_jobs}")        
 
         # log the number of dropped jobs
         self.log_delayed_packets(delayed_ue_jobs, delayed_sensor_jobs)

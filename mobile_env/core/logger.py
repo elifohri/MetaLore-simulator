@@ -7,7 +7,7 @@ class Logger:
         # Set up the first logger for general simulation logs
         self.simulation_logger = logging.getLogger('simulation_logger')
         self.simulation_logger.setLevel(logging.INFO)
-        sim_handler = logging.FileHandler('simulation_test.log')
+        sim_handler = logging.FileHandler('simulation_training.log')
         sim_handler.setLevel(logging.INFO)
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
         sim_handler.setFormatter(formatter)
@@ -18,7 +18,7 @@ class Logger:
         # Set up the second logger for performance logs
         self.reward_logger = logging.getLogger('reward_logger')
         self.reward_logger.setLevel(logging.INFO)
-        reward_handler = logging.FileHandler('rewards_test.log')
+        reward_handler = logging.FileHandler('rewards_training.log')
         reward_handler.setLevel(logging.INFO)
         #perf_handler.setFormatter(formatter)
         self.reward_logger.addHandler(reward_handler)
