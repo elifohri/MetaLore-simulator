@@ -60,7 +60,7 @@ class InverseWeightedRate(Scheduler):
     
 
 class ProportionalFair(Scheduler):
-    def __init__(self):
+    def __init__(self, **kwargs):
         self.average_rates = {}
 
     def share(self, bs: BaseStation, rates: List[float]) -> List[float]:

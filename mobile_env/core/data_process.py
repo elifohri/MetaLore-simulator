@@ -38,7 +38,7 @@ class DataProcessManager:
             job = transferred_jobs_queue.peek_job()  
 
             # Log job times before processing
-            self._log_job_times(job, "Before Processing")
+            #self._log_job_times(job, "Before Processing")
         
             # Check if job can be processed with available computational power.
             if job and job['computation_request'] <= computational_power:
@@ -46,7 +46,7 @@ class DataProcessManager:
                 computational_power -= job['computation_request']
                 
                 # Log job times after processing
-                self._log_job_times(job, "After Processing")
+                #self._log_job_times(job, "After Processing")
                 
                 # Check if computational power is exhausted.
                 if computational_power <= 0:
@@ -66,7 +66,7 @@ class DataProcessManager:
         # Update job properties in the corresponding data frame
         self._update_data_frame(job)
         # Log processed job
-        self._log_processed_job(job)
+        #self._log_processed_job(job)
 
     def _log_processed_job(self, job: Job) -> None:
         """ Log the processed job."""

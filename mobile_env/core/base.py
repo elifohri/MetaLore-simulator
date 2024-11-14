@@ -5,6 +5,7 @@ from typing import Dict, List, Set, Tuple, Optional
 import gymnasium
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
+import math
 import numpy as np
 import pandas as pd
 import pygame
@@ -106,6 +107,10 @@ class MComCore(gymnasium.Env):
         self.job_generator = JobGenerator(self)
         self.data_transfer_manager = DataTransferManager(self)
         self.data_process_manager = DataProcessManager(self)
+        
+        # Keep track of delayed packets
+        self.delayed_ue_jobs: int = 0
+        self.delayed_sensor_jobs: int = 0
 
         # Initialize or update queue logs
         if not hasattr(self, 'queue_size_logs'):
@@ -137,13 +142,42 @@ class MComCore(gymnasium.Env):
                 'delayed_sensor_packets': [],
             }
             
+        # Initialize or update total number of delayed packet logs
+        if not hasattr(self, 'total_delayed_packet_logs'):
+            self.total_delayed_packet_logs = {
+                'time': [],
+                'total_delayed_ue_packets': [],
+                'total_delayed_sensor_packets': [],
+            }
+            
         # Initialize reward logs
         if not hasattr(self, 'reward_logs'):
             self.reward_logs = {
                 'time': [],
                 'rewards': []
             }
+            
+        # Initialize throughput logs for UEs
+        if not hasattr(self, 'throughput_ue_logs'):
+            self.throughput_ue_logs = {
+                'time': [],
+                'throughput_ue': []
+            }
+        
+        # Initialize throughput logs for sensors
+        if not hasattr(self, 'throughput_sensor_logs'):
+            self.throughput_sensor_logs = {
+                'time': [],
+                'throughput_sensor': []
+            }
 
+        # Initialize age of information logs for UEs
+        if not hasattr(self, 'aoi_logs'):
+            self.aoi_logs = {
+                'time': [],
+                'aoi_logs': []
+            }
+            
         # parameters for pygame visualization
         self.window = None
         self.clock = None
@@ -355,6 +389,10 @@ class MComCore(gymnasium.Env):
         self.utilities = {}
         # reset sensors utilities
         self.utilities_sensor = {}
+        
+        # reset number of delayed packets        
+        self.delayed_ue_jobs = 0
+        self.delayed_sensor_jobs = 0
 
         self.queue_size_logs = {
             'time': [],
@@ -379,10 +417,31 @@ class MComCore(gymnasium.Env):
             'delayed_ue_packets': [],
             'delayed_sensor_packets': [],
         }
+
+        self.total_delayed_packet_logs = {
+            'time': [],
+            'total_delayed_ue_packets': [],
+            'total_delayed_sensor_packets': [],
+        }
         
         self.reward_logs = {
             'time': [],
             'rewards': []
+        }
+        
+        self.throughput_ue_logs = {
+            'time': [],
+            'throughput_ue': []
+        }
+        
+        self.throughput_sensor_logs = {
+            'time': [],
+            'throughput_sensor': []
+        }
+        
+        self.aoi_logs = {
+            'time': [],
+            'aoi_logs': []
         }
 
         # set time of last UE's departure
@@ -620,6 +679,18 @@ class MComCore(gymnasium.Env):
         #self.job_generator.log_df_ue()
         #self.logger.log_reward(f"Time step: {self.time} Data frames Sensor:")
         #self.job_generator.log_df_sensor()
+        
+        # check all the e2e delay threshold for all jobs
+        delayed_ue_packets, delayed_sensor_packets = self.check_packet_delays()
+        #self.logger.log_simulation(f"Time step: {self.time} Delayed packets: {delayed_ue_packets} UE and {delayed_sensor_packets} sensor")        
+
+        # log the number of dropped jobs
+        self.log_delayed_packets(delayed_ue_packets, delayed_sensor_packets)
+        self.log_total_delayed_packets()
+        
+        # log the age of information for UEs
+        aoi_per_user = self.handler.aoi_per_user(self)
+        self.log_aoi_per_user(aoi_per_user)
 
         # compute utilities from UEs' data rates & log its mean value
         self.utilities = {
@@ -647,15 +718,7 @@ class MComCore(gymnasium.Env):
         # log rewards
         self.log_rewards(rewards)
 
-        # check all the e2e delay threshold for all jobs
-        delayed_ue_jobs, delayed_sensor_jobs = self.check_packet_delays()
-        #self.logger.log_simulation(f"Time step: {self.time} {delayed_ue_jobs} and {delayed_sensor_jobs}")        
-
-        # log the number of dropped jobs
-        self.log_delayed_packets(delayed_ue_jobs, delayed_sensor_jobs)
-
         # evaluate metrics and update tracked metrics given the core simulation
-        #TODO: check what does this monitor class do
         self.monitor.update(self)
 
         # move user equipments around; update positions of UEs
@@ -777,33 +840,32 @@ class MComCore(gymnasium.Env):
     
     def check_packet_delays(self) -> Tuple[int, int]:
         """Check packets for E2E delay and update dropped packet counts."""
-        delayed_ue_jobs: int = 0
-        delayed_sensor_jobs: int = 0
+        delayed_ue_packets: int = 0
+        delayed_sensor_packets: int = 0
 
         # Check if there are any e2e delay threshold exceeding UE jobs
-        for _, row in self.job_generator.packet_df_ue.iterrows():
+        for index, row in self.job_generator.packet_df_ue.iterrows():
             # Check if packet is accomplished at this time step
             if row['is_accomplished'] and row['accomplished_time'] == self.time:
                 # Packet is accomplished in this time step
                 dt = self.time - row['creation_time']
 
                 if dt > row['e2e_delay_threshold']:
-                    delayed_ue_jobs += 1
+                    self.delayed_ue_jobs += 1
+                    delayed_ue_packets += 1
 
         # Check if there are any e2e delay threshold exceeding Sensor jobs
-        for _, row in self.job_generator.packet_df_sensor.iterrows():
+        for index, row in self.job_generator.packet_df_sensor.iterrows():
             # Check if packet is accomplished at this time step
             if row['is_accomplished'] and row['accomplished_time'] == self.time:
                 # Packet is accomplished in this time step
                 dt = self.time - row['creation_time']
-
-                if dt > row['e2e_delay_threshold']:
-                    delayed_sensor_jobs += 1
                 
-        self.logger.log_simulation(f"Time step: {self.time} Number of delayed accomplished UE packets {delayed_ue_jobs}")
-        self.logger.log_simulation(f"Time step: {self.time} Number of delayed accomplished sensor packets {delayed_sensor_jobs}")
+                if dt > row['e2e_delay_threshold']:
+                    self.delayed_sensor_jobs += 1
+                    delayed_sensor_packets += 1
 
-        return delayed_ue_jobs, delayed_sensor_jobs
+        return delayed_ue_packets, delayed_sensor_packets
     
     def station_utilities(self) -> Dict[BaseStation, UserEquipment]:
         """Compute average utility of UEs connected to the basestation."""
@@ -1253,12 +1315,24 @@ class MComCore(gymnasium.Env):
         sensor_uplink_queue_size = [sensor.data_buffer_uplink.data_queue.qsize() for sensor in self.sensors.values()]
         self.queue_size_logs['sensor_uplink_queues'].append(sensor_uplink_queue_size)
 
-    def log_delayed_packets(self, delayed_ue_jobs, delayed_sensor_jobs):
-        """Logs the current number of dropped packets at that time step."""
+    def log_delayed_packets(self, delay_ue_jobs, delay_sensor_jobs):
+        """Logs the current number of delayed packets at that time step."""
         self.delayed_packet_logs['time'].append(self.time)
 
-        self.delayed_packet_logs['delayed_ue_packets'].append(delayed_ue_jobs)
-        self.delayed_packet_logs['delayed_sensor_packets'].append(delayed_sensor_jobs)
+        self.delayed_packet_logs['delayed_ue_packets'].append(delay_ue_jobs)
+        self.delayed_packet_logs['delayed_sensor_packets'].append(delay_sensor_jobs)
+        
+    def log_total_delayed_packets(self):
+        """Logs the cumulative number of delayed packets at that time step."""
+        self.total_delayed_packet_logs['time'].append(self.time)
+
+        self.total_delayed_packet_logs['total_delayed_ue_packets'].append(self.delayed_ue_jobs)
+        self.total_delayed_packet_logs['total_delayed_sensor_packets'].append(self.delayed_sensor_jobs)
+        
+    def log_aoi_per_user(self, aoi_per_device):
+        """Logs the age of information for every user for every timestep."""
+        self.aoi_logs['time'].append(self.time)
+        self.aoi_logs['aoi_logs'].append(aoi_per_device)
 
     def log_rewards(self, reward):
         """Logs the reward at each time step."""
@@ -1355,7 +1429,7 @@ class MComCore(gymnasium.Env):
         """Plots the number of dropped packets over time for UE and Sensors."""
         time_steps = self.delayed_packet_logs['time']
 
-        plt.figure(figsize=(10, 6))
+        plt.figure(figsize=(12, 6))
         
         # Plot the dropped UE jobs
         plt.plot(time_steps, self.delayed_packet_logs['delayed_ue_packets'], label="Delayed UE Packets", color="blue", marker='o')
@@ -1371,12 +1445,33 @@ class MComCore(gymnasium.Env):
         plt.grid(True)
         plt.legend()
         plt.show()
+        
+    def plot_total_delayed_packets(self):
+        """Plots the total number of dropped packets over time for UE and Sensors."""
+        time_steps = self.total_delayed_packet_logs['time']
+
+        plt.figure(figsize=(12, 6))
+        
+        # Plot the dropped UE jobs
+        plt.plot(time_steps, self.total_delayed_packet_logs['total_delayed_ue_packets'], label="Cumulative Number of Delayed UE Packets", color="blue", marker='o')
+        
+        # Plot the dropped Sensor jobs
+        plt.plot(time_steps, self.total_delayed_packet_logs['total_delayed_sensor_packets'], label="Cumulative Number of Delayed Sensor Packets", color="red", marker='o')
+        
+        # Adding title and labels
+        plt.title("Cumulative Number of Delayed Packets Over Time")
+        plt.xlabel("Time Steps")
+        plt.ylabel("Cumulative Number of Delayed Packets")
+        
+        plt.grid(True)
+        plt.legend()
+        plt.show()
 
     def plot_rewards(self):
         """Plots the rewards over time."""
         time_steps = self.delayed_packet_logs['time']
                 
-        plt.figure(figsize=(10, 6))
+        plt.figure(figsize=(12, 6))
         
         # Plot rewards over time
         plt.plot(time_steps, self.reward_logs['rewards'], label="Rewards", color="green", marker='o')
@@ -1390,7 +1485,95 @@ class MComCore(gymnasium.Env):
         plt.legend()
         plt.show()
     
-    
+
+    def plot_throughput(self) -> None:
+        """Plots the throughput over time for each UE, sensor, and base station by user and sensor data sources."""
+        plt.figure(figsize=(12, 6))
+
+        # Plot Base Station cumulative throughput for User Equipment over time
+        for bs_id, data in self.data_transfer_manager.throughput_bs_ue_logs.items():
+            plt.plot(data, label=f"BS {bs_id} User Device Throughput", linestyle='--', color='blue')
+
+        # Plot Base Station cumulative throughput for Sensors over time
+        for bs_id, data in self.data_transfer_manager.throughput_bs_sensor_logs.items():
+            plt.plot(data, label=f"BS {bs_id} Sensor Throughput", linestyle='-.', color='green')
+
+        plt.xlabel("Time Step")
+        plt.ylabel("Throughput")
+        plt.title("Throughput Over Time for UEs and Sensors in the Base Stations")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+
+    def plot_cumulative_throughput(self) -> None:
+        """Plots the cumulative throughput over time for each UE, sensor, and base station by user and sensor data sources."""
+        plt.figure(figsize=(12, 6))
+
+        # Calculate cumulative throughput for Base Station User Equipment logs
+        for bs_id, data in self.data_transfer_manager.throughput_bs_ue_logs.items():
+            cumulative_data = np.cumsum(data)  # Calculate cumulative sum
+            plt.plot(cumulative_data, label=f"BS {bs_id} Cumulative User Device Throughput", linestyle='--', color='blue')
+
+        # Calculate cumulative throughput for Base Station Sensor logs
+        for bs_id, data in self.data_transfer_manager.throughput_bs_sensor_logs.items():
+            cumulative_data = np.cumsum(data)  # Calculate cumulative sum
+            plt.plot(cumulative_data, label=f"BS {bs_id} Cumulative Sensor Throughput", linestyle='-.', color='green')
+
+        plt.xlabel("Time Step")
+        plt.ylabel("Cumulative Throughput")
+        plt.title("Cumulative Throughput Over Time for UEs and Sensors in the Base Stations")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+    def plot_aoi_per_device(self):
+        """Plots the AoI over time with a separate plot for each user device."""
+
+        # Ensure time and aoi_logs are the same length
+        if len(self.aoi_logs['time']) != len(self.aoi_logs['aoi_logs']):
+            raise ValueError("Mismatch in lengths of time steps and AoI logs.")
+
+        # Identify all device IDs
+        device_ids = set()
+        for log in self.aoi_logs['aoi_logs']:
+            device_ids.update(log.keys())
+            
+        # Initialize dictionary to hold AoI data for each device over time
+        device_aoi_data = {device_id: [] for device_id in device_ids}
+
+        # Fill in AoI data for each device at each time step
+        for log in self.aoi_logs['aoi_logs']:
+            for device_id in device_ids:
+                device_aoi_data[device_id].append(log.get(device_id, 0))
+
+        # Determine the grid layout for subplots based on the number of devices
+        num_devices = len(device_ids)
+        num_cols = 3  # Adjust as needed
+        num_rows = math.ceil(num_devices / num_cols)
+
+        # Plot AoI for each device in a separate subplot
+        fig, axes = plt.subplots(num_rows, num_cols, figsize=(15, num_rows * 4))
+        axes = axes.flatten()  # Flatten in case there are fewer devices than subplots
+
+        for idx, (device_id, aoi_values) in enumerate(device_aoi_data.items()):
+            ax = axes[idx]
+            ax.plot(self.aoi_logs['time'], aoi_values, label=f"Device {device_id}")
+            ax.set_xlabel("Time Steps")
+            ax.set_ylabel("Age of Information (AoI)")
+            ax.set_title(f"Device {device_id}")
+            ax.grid(True)
+            ax.legend()
+
+        # Turn off any unused subplots
+        for i in range(num_devices, len(axes)):
+            fig.delaxes(axes[i])
+
+        plt.tight_layout()
+        plt.show()
+
 
     def close(self) -> None:
         """Closes the environment and terminates its visualization."""

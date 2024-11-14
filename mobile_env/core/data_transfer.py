@@ -15,7 +15,14 @@ class DataTransferManager:
         self.logger = env.logger
         self.job_generator = env.job_generator
 
+        # Initialize throughput history to store data for plotting
+        self.throughput_bs_ue_logs: Dict[str, List[float]] = {}
+        self.throughput_bs_sensor_logs: Dict[str, List[float]] = {}
+        
     def transfer_data_uplink(self) -> None:
+        # Set initial throughput for all devices to zero at the start of each time step
+        self._initialize_throughput_trackers()
+        
         # Transfers data from UEs and sensors to base stations according to data rates.
         for bs in self.env.stations.values():
             self._transfer_data_to_bs(bs, self.env.connections.get(bs, []))
@@ -33,9 +40,12 @@ class DataTransferManager:
         if data_transfer_rate <= 0 or src_buffer.data_queue.empty():
             self.logger.log_simulation(
                 f"Time step: {self.env.time} Queue is empty or no data rate for uplink connection from {src} "
-                f"to {dst} for device {Device} and bs {BaseStation}. Packet transmission aborted."
+                f"to {dst}. Packet transmission aborted."
             )
             return
+    
+        # Track total data transferred for throughput calculation
+        total_data_transferred = 0
 
         # Transfer jobs while bandwidth is available and there are jobs to transfer.
         while data_transfer_rate > 0 and not src_buffer.data_queue.empty():
@@ -43,7 +53,7 @@ class DataTransferManager:
             job = src_buffer.peek_job()
             
             # Log job times before transfer
-            self._log_job_times(job, "Before Transfer")
+            #self._log_job_times(job, "Before Transfer")
 
             # Update start of transfer time of job
             if job['transfer_time_start'] is None:
@@ -55,21 +65,25 @@ class DataTransferManager:
 
             # Update data transfer rate
             data_transfer_rate -= bits_to_send
+            total_data_transferred += bits_to_send
 
             # Check if there is still bits to send
             if job['remaining_request_size'] <= 0:
                 self._transfer_job(src_buffer, dst_buffer)
                 
                 # Log job times after transfer
-                self._log_job_times(job, "After Transfer")
+                #self._log_job_times(job, "After Transfer")
 
                 # Log full job transfer
-                self._log_transfer(src, dst, job, bits_to_send, full_transfer=True)
+                #self._log_transfer(src, dst, job, bits_to_send, full_transfer=True)
 
             else:
                 # Log partial job transfer
-                self._log_transfer(src, dst, job, bits_to_send, full_transfer=False)
+                #self._log_transfer(src, dst, job, bits_to_send, full_transfer=False)
                 break
+            
+        # Update throughput records for src and dst
+        self._update_throughput(dst, total_data_transferred, src)
 
     def _get_remaining_data_rate(self, src: Device, dst: BaseStation) -> float:
         if isinstance(src, UserEquipment):
@@ -151,3 +165,18 @@ class DataTransferManager:
             f"  Device Queue Waiting Time: {job.get('device_queue_waiting_time', 'N/A')}\n"
             f"  BS Queue Waiting Time: {job.get('bs_queue_waiting_time', 'N/A')}"
         )
+        
+    def _initialize_throughput_trackers(self) -> None:
+        """Initialize or reset throughput for each device and base station to zero at the beginning of each time step."""
+        for bs in self.env.stations.values():
+            self.throughput_bs_ue_logs.setdefault(bs.bs_id, []).append(0)
+            self.throughput_bs_sensor_logs.setdefault(bs.bs_id, []).append(0)
+    
+    def _update_throughput(self, device: Device, data_transferred: float, src: Optional[Device] = None) -> None:
+        """Updates throughput for a device or base station."""
+        if isinstance(device, BaseStation) and src:
+            # Separate cumulative throughput tracking at the base station
+            if isinstance(src, UserEquipment):
+                self.throughput_bs_ue_logs[device.bs_id][-1] += data_transferred
+            elif isinstance(src, Sensor):
+                self.throughput_bs_sensor_logs[device.bs_id][-1] += data_transferred
