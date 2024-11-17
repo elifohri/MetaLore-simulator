@@ -106,7 +106,7 @@ class Sensor:
     def _init_job_queue(self) -> JobQueue:
         return JobQueue()
 
-    def _initialize_sensor_logs(self, sensors: list["Sensor"]):
+    def _initialize_sensor_logs(self, sensors: list):
         for sensor in sensors:
             if not isinstance(sensor.logs, dict):
                 sensor.logs = {}

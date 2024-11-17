@@ -7,7 +7,7 @@ class Logger:
         # Set up the first logger for general simulation logs
         self.simulation_logger = logging.getLogger('simulation_logger')
         self.simulation_logger.setLevel(logging.INFO)
-        sim_handler = logging.FileHandler('simulation_training__rl.log')
+        sim_handler = logging.FileHandler('simulation_training_rl.log')
         sim_handler.setLevel(logging.INFO)
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
         sim_handler.setFormatter(formatter)
