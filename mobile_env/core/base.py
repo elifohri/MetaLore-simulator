@@ -12,6 +12,7 @@ import pygame
 from matplotlib import cm
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from pygame import Surface
+import time
 
 from mobile_env.core import metrics
 from mobile_env.core.arrival import NoDeparture
@@ -70,7 +71,7 @@ class MComCore(gymnasium.Env):
         # define sizes of base feature set that can or cannot be observed
         self.feature_sizes = {
             "queue_lengths": 4,                     # 4 queue lengths
-            "resource_utilization": 2,              # BW and CPU utilization
+            #"resource_utilization": 2,              # BW and CPU utilization
         }
 
         # Instantiate the Logger class
@@ -111,6 +112,9 @@ class MComCore(gymnasium.Env):
         # Keep track of delayed packets
         self.delayed_ue_jobs: int = 0
         self.delayed_sensor_jobs: int = 0
+
+        # Inititalize total episode reward
+        self.episode_reward = 0  
 
         # Initialize or update queue logs
         if not hasattr(self, 'queue_size_logs'):
@@ -246,19 +250,19 @@ class MComCore(gymnasium.Env):
             # default ue job generation config
             "ue_job": {
                 "job_generation_probability": 0.7,
-                "communication_job_lambda_value": 2.875,    # in MB
+                "communication_job_lambda_value": 3.0,    # in MB
                 "computation_job_lambda_value": 10.0,       # in units
             },
             # default sensor job generation config
             "sensor_job": {
-                "communication_job_lambda_value": 1.125,    # in MB
+                "communication_job_lambda_value": 2.5,    # in MB
                 "computation_job_lambda_value": 5.0,        # in units
             },
             # default delay threshold for packets
             "e2e_delay_threshold": 5,
             "reward_calculation": {
-                "ue_penalty": -3,
-                "discount_factor": 0.9,
+                "ue_penalty": -1,
+                "discount_factor": 0.95,
                 "base_reward": 10,
                 "positive_discount_factor": 0.9,      # Discount factor for positive delay
                 "negative_discount_factor": 0.8,      # Discount factor for negative delay
@@ -444,6 +448,9 @@ class MComCore(gymnasium.Env):
             'aoi_logs': []
         }
 
+        # Reset episode reward
+        self.episode_reward = 0  
+
         # set time of last UE's departure
         self.max_departure = max(ue.extime for ue in self.users.values())
 
@@ -588,15 +595,22 @@ class MComCore(gymnasium.Env):
     def step(self, actions: Tuple[float, float]):
         assert not self.time_is_up, "step() called on terminated episode"
 
+        start_time = time.time()
+        log_times = {}
+
         #self.logger.log_simulation(f"Time step: {self.time} Establishing connections...")
 
         # connect UEs and sensors to the closest base station and establish connection
+        t_start = time.time()
         self.connect_bs_ue()
         self.connect_bs_sensor()
+        log_times['connect_bs'] = time.time() - t_start
 
         # check snr thresholds, release established connections that moved e.g. out-of-range
+        t_start = time.time()
         self.update_connections()
         self.update_connections_sensors()
+        log_times['update_connections'] = time.time() - t_start
 
         # Logging base station connections
         #self.logger.log_all_connections()
@@ -604,10 +618,12 @@ class MComCore(gymnasium.Env):
         # Generate jobs for each UE and sensor
         #self.logger.log_simulation(f"Time step: {self.time} Job generation starting...")
 
+        t_start = time.time()
         for ue in self.users.values():
             self.job_generator.generate_job_ue(ue)
         for sensor in self.sensors.values():
             self.job_generator.generate_job_sensor(sensor)
+        log_times['generate_jobs'] = time.time() - t_start
 
         #self.logger.log_simulation(f"Time step: {self.time} Job generation terminated...")
 
@@ -615,13 +631,16 @@ class MComCore(gymnasium.Env):
         #self.logger.log_all_queues()
 
         # apply handler to transform actions to expected shape
+        t_start = time.time()
         bandwidth_allocation, computational_allocation = self.handler.action(self, actions)
+        log_times['action_transformation'] = time.time() - t_start
 
         #self.logger.log_simulation(f"Time step: {self.time} Action applied...")
         #self.logger.log_simulation(f"Time step: {self.time} Communication resource allocation to UEs in percentage: {bandwidth_allocation * 100:.2f} %")
         #self.logger.log_simulation(f"Time step: {self.time} Computation resource allocation to UEs in percentage: {computational_allocation * 100:.2f} %")
 
         # Store the resource allocations for each BS in the dictionary
+        t_start = time.time()
         self.resource_allocations = {}
         for bs in self.stations.values():
             bandwidth_for_ues, bandwidth_for_sensors, computational_power_for_ues, \
@@ -633,11 +652,13 @@ class MComCore(gymnasium.Env):
                 'computational_power_for_ues': computational_power_for_ues,
                 'computational_power_for_sensors': computational_power_for_sensors
             }
+        log_times['apply_actions'] = time.time() - t_start
 
         # log the resource allocations
         self.log_resource_allocations(bandwidth_allocation, computational_allocation)
             
         # update connections' data rates after re-scheduling
+        t_start = time.time()
         self.datarates = {}
         for bs in self.stations.values():
             drates_ue = self.station_allocation(bs, bandwidth_for_ues)
@@ -648,16 +669,22 @@ class MComCore(gymnasium.Env):
             drates_sensor = self.station_allocation_sensor(bs, bandwidth_for_sensors)
             self.datarates_sensor.update(drates_sensor)
         
+        log_times['update_datarates'] = time.time() - t_start
+
         # update macro (aggregated) data rates for each UE
+        t_start = time.time()
         self.macro = self.macro_datarates(self.datarates)
         self.macro_sensor = self.macro_datarates_sensor(self.datarates_sensor)
+        log_times['macro_datarates'] = time.time() - t_start
 
         # logging datarates
         #self.logger.log_all_datarates()
 
         # packet uplink transmission
         #self.logger.log_simulation(f"Time step: {self.time} Job transfer starting...")
+        t_start = time.time()
         self.data_transfer_manager.transfer_data_uplink()
+        log_times['data_transfer'] = time.time() - t_start
         #self.logger.log_simulation(f"Time step: {self.time} Job transfer over...")
 
         # log sensor and ue data queues
@@ -665,7 +692,9 @@ class MComCore(gymnasium.Env):
 
         # process data in MEC servers
         #self.logger.log_simulation(f"Time step: {self.time} Data processing starting...")
+        t_start = time.time()
         self.data_process_manager.process_data_mec(computational_power_for_ues, computational_power_for_sensors)
+        log_times['data_processing'] = time.time() - t_start
         #self.logger.log_simulation(f"Time step: {self.time} Data processing over...")
 
         # log sensor and ue data queues
@@ -681,7 +710,9 @@ class MComCore(gymnasium.Env):
         #self.job_generator.log_df_sensor()
         
         # check all the e2e delay threshold for all jobs
+        t_start = time.time()
         delayed_ue_packets, delayed_sensor_packets = self.check_packet_delays()
+        log_times['check_delays'] = time.time() - t_start
         #self.logger.log_simulation(f"Time step: {self.time} Delayed packets: {delayed_ue_packets} UE and {delayed_sensor_packets} sensor")        
 
         # log the number of dropped jobs
@@ -689,10 +720,11 @@ class MComCore(gymnasium.Env):
         self.log_total_delayed_packets()
         
         # log the age of information for UEs
-        aoi_per_user = self.handler.aoi_per_user(self)
-        self.log_aoi_per_user(aoi_per_user)
+        #aoi_per_user = self.handler.aoi_per_user(self)
+        #self.log_aoi_per_user(aoi_per_user)
 
         # compute utilities from UEs' data rates & log its mean value
+        t_start = time.time()
         self.utilities = {
             ue: self.utility.utility(self.macro[ue]) for ue in self.active
         }
@@ -711,15 +743,23 @@ class MComCore(gymnasium.Env):
         self.utilities_sensor = {
             sensor: self.utility.scale(util) for sensor, util in self.utilities_sensor.items()
         }
+        log_times['compute_utilities'] = time.time() - t_start
 
         # compute rewards
+        t_start = time.time()
         rewards = self.handler.reward(self)
+        log_times['compute_rewards'] = time.time() - t_start
+
+        # Accumulate rewards for the current episode
+        self.episode_reward += rewards
         
         # log rewards
         self.log_rewards(rewards)
 
         # evaluate metrics and update tracked metrics given the core simulation
+        t_start = time.time()
         self.monitor.update(self)
+        log_times['update_movements'] = time.time() - t_start
 
         # move user equipments around; update positions of UEs
         for ue in self.active:
@@ -731,6 +771,7 @@ class MComCore(gymnasium.Env):
             self.connections[bs] = ues - leaving
 
         # update list of active UEs & add those that begin to request service
+        t_start = time.time()
         self.active = sorted(
             [
                 ue
@@ -748,6 +789,7 @@ class MComCore(gymnasium.Env):
             ],
             key=lambda sensor: sensor.sensor_id,
         )
+        log_times['update_active'] = time.time() - t_start
 
         # update internal time of environment
         self.time += 1
@@ -763,6 +805,7 @@ class MComCore(gymnasium.Env):
         # compute observations for next step and information
         # methods are defined by handler according to strategy pattern
         # NOTE: compute observations after proceeding in time (may skip ahead)
+        t_start = time.time()
         observation = self.handler.observation(self)
 
         # Ensure observation is of type np.float32
@@ -770,6 +813,8 @@ class MComCore(gymnasium.Env):
 
         # Clip observation to ensure it is within the observation space bounds
         observation = np.clip(observation, self.observation_space.low, self.observation_space.high)
+
+        log_times['compute_observation'] = time.time() - t_start
         
         info = self.handler.info(self)
 
@@ -780,6 +825,17 @@ class MComCore(gymnasium.Env):
         # terminated is always False and truncated is True once time is up
         terminated = False
         truncated = self.time_is_up
+
+        # If the episode ends, include the total reward
+        if truncated: 
+            info["episode"] = {"r": self.episode_reward}
+
+        # Log total time
+        log_times['total'] = time.time() - start_time
+
+        # Log timings to file
+        with open("step_timing_log.txt", "a") as log_file:
+            log_file.write(f"Step {self.time} timing breakdown: {log_times}\n")
 
         return observation, rewards, terminated, truncated, info
 
@@ -840,30 +896,34 @@ class MComCore(gymnasium.Env):
     
     def check_packet_delays(self) -> Tuple[int, int]:
         """Check packets for E2E delay and update dropped packet counts."""
-        delayed_ue_packets: int = 0
-        delayed_sensor_packets: int = 0
+        
+        # Filter and create a copy for accomplished UE packets at the current time step
+        accomplished_ue_packets = self.job_generator.packet_df_ue[
+            (self.job_generator.packet_df_ue['is_accomplished']) &
+            (self.job_generator.packet_df_ue['accomplished_time'] == self.time)
+        ].copy()  # Explicitly create a copy to avoid SettingWithCopyWarning
 
-        # Check if there are any e2e delay threshold exceeding UE jobs
-        for index, row in self.job_generator.packet_df_ue.iterrows():
-            # Check if packet is accomplished at this time step
-            if row['is_accomplished'] and row['accomplished_time'] == self.time:
-                # Packet is accomplished in this time step
-                dt = self.time - row['creation_time']
+        # Compute delays for UE packets and count those exceeding the threshold
+        if not accomplished_ue_packets.empty:
+            accomplished_ue_packets['delay'] = self.time - accomplished_ue_packets['creation_time']
+            delayed_ue_packets = (accomplished_ue_packets['delay'] > accomplished_ue_packets['e2e_delay_threshold']).sum()
+            self.delayed_ue_jobs += delayed_ue_packets
+        else:
+            delayed_ue_packets = 0
 
-                if dt > row['e2e_delay_threshold']:
-                    self.delayed_ue_jobs += 1
-                    delayed_ue_packets += 1
+        # Filter and create a copy for accomplished Sensor packets at the current time step
+        accomplished_sensor_packets = self.job_generator.packet_df_sensor[
+            (self.job_generator.packet_df_sensor['is_accomplished']) &
+            (self.job_generator.packet_df_sensor['accomplished_time'] == self.time)
+        ].copy()  # Explicitly create a copy to avoid SettingWithCopyWarning
 
-        # Check if there are any e2e delay threshold exceeding Sensor jobs
-        for index, row in self.job_generator.packet_df_sensor.iterrows():
-            # Check if packet is accomplished at this time step
-            if row['is_accomplished'] and row['accomplished_time'] == self.time:
-                # Packet is accomplished in this time step
-                dt = self.time - row['creation_time']
-                
-                if dt > row['e2e_delay_threshold']:
-                    self.delayed_sensor_jobs += 1
-                    delayed_sensor_packets += 1
+        # Compute delays for Sensor packets and count those exceeding the threshold
+        if not accomplished_sensor_packets.empty:
+            accomplished_sensor_packets['delay'] = self.time - accomplished_sensor_packets['creation_time']
+            delayed_sensor_packets = (accomplished_sensor_packets['delay'] > accomplished_sensor_packets['e2e_delay_threshold']).sum()
+            self.delayed_sensor_jobs += delayed_sensor_packets
+        else:
+            delayed_sensor_packets = 0
 
         return delayed_ue_packets, delayed_sensor_packets
     

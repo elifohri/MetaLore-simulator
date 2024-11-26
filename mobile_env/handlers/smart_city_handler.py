@@ -9,7 +9,7 @@ from mobile_env.handlers.handler import Handler
 
 class MComSmartCityHandler(Handler):
 
-    features = ["queue_lengths", "resource_utilization"]
+    features = ["queue_lengths"]
 
     def __init__(self, env):
         self.env = env
@@ -50,19 +50,29 @@ class MComSmartCityHandler(Handler):
         
         # Gather the queue lengths (from base station)
         queue_lengths = np.array(env.get_queue_lengths()).ravel()
-        #env.logger.log_reward(f"Time step: {env.time} Queue lengths: {queue_lengths}")      
+        #env.logger.log_reward(f"Time step: {env.time} Queue lengths: {queue_lengths}")    
+        
+        # Define maximum queue sizes for normalization
+        max_queue_lengths = np.array([500, 2000, 500, 2000])  # Adjust these values as needed
+
+        # Normalize queue lengths
+        normalized_queue_lengths = queue_lengths / max_queue_lengths  
+        env.logger.log_reward(f"Time step: {env.time} Queue lengths: {normalized_queue_lengths}")
 
         # Get resource utilization (bandwidth and CPU)
-        resource_utilization = np.array(env.get_resource_utilization()).ravel()
+        #resource_utilization = np.array(env.get_resource_utilization()).ravel()
         #env.logger.log_reward(f"Time step: {env.time} Resource utilization: {resource_utilization}")   
         
-        if queue_lengths.shape != (4,) or resource_utilization.shape != (2,):
-            raise ValueError(f"Unexpected shapes: queue_lengths {queue_lengths.shape}, resource_utilization {resource_utilization.shape}")
+        #if queue_lengths.shape != (4,) or resource_utilization.shape != (2,):
+            #raise ValueError(f"Unexpected shapes: queue_lengths {queue_lengths.shape}, resource_utilization {resource_utilization.shape}")
+
+        if normalized_queue_lengths.shape != (4,):
+            raise ValueError(f"Unexpected shapes: queue_lengths {normalized_queue_lengths.shape}")
 
         # Concatenate all observations into a single array
         observation = np.concatenate([
-            queue_lengths,              # 4 values
-            resource_utilization        # 2 values
+            normalized_queue_lengths,              # 4 values
+            #resource_utilization        # 2 values
         ]).astype(np.float32)
         
         return observation
@@ -76,51 +86,53 @@ class MComSmartCityHandler(Handler):
         base_reward = config["base_reward"]
         discount_factor = config["discount_factor"]
 
-        # List of packets that exceeded the delay constraint or were accomplished
-        indices_to_remove_ue_jobs = []
+        accomplished_packets = env.job_generator.packet_df_ue[
+            (env.job_generator.packet_df_ue['is_accomplished']) &
+            (env.job_generator.packet_df_ue['accomplished_time'] == env.time)
+        ].copy()
 
-        for index, row in env.job_generator.packet_df_ue.iterrows():
-            # Check if packet is accomplished at this timestep
-            if row['is_accomplished'] and row['accomplished_time'] == env.time:
-                # Packet is accomplished in this time step
-                dt = env.time - row['creation_time']
-                
-                if dt > row['e2e_delay_threshold']:
-                    # Packet exceeds threshold, penalty applied
-                    total_reward += penalty
-                    #env.logger.log_reward(f"Time step: {env.time} Packet {row['packet_id']} from UE {row['device_id']} failed due to delay. Penalty applied: {penalty}.")
-                else:
-                    # Packet succeeded within the time threshold, compute delay and reward
-                    delay = cls.compute_delay(cls, env, row)
-                    
-                    # Skip reward computation if no accomplished sensor packets are found
-                    if delay is None:
-                        #env.logger.log_reward(f"Time step: {env.time} No accomplished sensor packets found for Packet {row['packet_id']} from UE {row['device_id']}. Skipping reward calculation.")
-                        continue
-                    
-                    reward = base_reward * (discount_factor ** delay)        
-                    total_reward += reward
-                    #env.logger.log_reward(f"Time step: {env.time} Packet {row['packet_id']} from UE {row['device_id']} succeeded within time threshold. Reward applied: {reward}.")
+        if accomplished_packets.empty:
+            return total_reward
 
-                # Mark as processed and remove from the data frame
-                indices_to_remove_ue_jobs.append(index)
+        # Compute delays and penalties
+        accomplished_packets['delay'] = env.time - accomplished_packets['creation_time']
+        penalties = (accomplished_packets['delay'] > accomplished_packets['e2e_delay_threshold']) * penalty
 
-        # Drop processed UE packets
-        if indices_to_remove_ue_jobs:
-            env.job_generator.packet_df_ue.drop(indices_to_remove_ue_jobs, inplace=True)
+        # Compute rewards for valid packets
+        valid_packets = accomplished_packets[
+            accomplished_packets['delay'] <= accomplished_packets['e2e_delay_threshold']
+        ]
 
+        if not valid_packets.empty:
+            valid_packets = valid_packets.copy()
+
+            # Compute 'computed_delay' column
+            valid_packets['computed_delay'] = valid_packets.apply(
+                lambda row: cls.compute_delay(cls, env, row), axis=1
+            )
+
+            valid_packets['reward'] = base_reward * (discount_factor ** valid_packets['computed_delay'])
+            total_reward += valid_packets['reward'].sum()
+
+        total_reward += penalties.sum()
+
+        env.job_generator.packet_df_ue.drop(accomplished_packets.index, inplace=True)
         env.logger.log_reward(f"Time step: {env.time} Total reward applied at this time step: {total_reward}.")
-        
+
         return total_reward
     
     def compute_delay(cls, env, ue_packet: pd.Series) -> float:
         """Computes the delay between the latest accomplished sensor packet and the UE packet."""
 
+        # Debugging: Check the type of ue_packet
+        if not isinstance(ue_packet, pd.Series):
+            raise TypeError(f"Expected pd.Series, got {type(ue_packet)} instead.")
+
         # Find all accomplished sensor packets
         accomplished_sensor_packets = env.job_generator.packet_df_sensor[
             (env.job_generator.packet_df_sensor['is_accomplished']) &
             (env.job_generator.packet_df_sensor['accomplished_time'].notnull())
-        ]
+        ].copy()
 
         if accomplished_sensor_packets.empty:
             #env.logger.log_reward(f"Time step: {env.time} No accomplished sensor packets found.")
@@ -132,7 +144,7 @@ class MComSmartCityHandler(Handler):
         # Filter packets with the highest accomplished_time
         latest_packets = accomplished_sensor_packets[
             accomplished_sensor_packets['accomplished_time'] == latest_accomplished_time
-        ]
+        ].copy()
 
         # If there are multiple packets with the same accomplished_time, choose the one with the highest creation_time
         latest_sensor_packet = latest_packets.loc[latest_packets['creation_time'].idxmax()]
@@ -187,26 +199,37 @@ class MComSmartCityHandler(Handler):
     
     @classmethod
     def aoi_per_user(cls, env) -> None:
-        """Logs age of information per user device at each timestep."""
+        """Logs age of information (AoI) per user device at each timestep."""
         aoi_logs_per_user = {}
-        
-        for _, row in env.job_generator.packet_df_ue.iterrows():
-            if row['is_accomplished'] and row['accomplished_time'] == env.time:
-                aoi = cls.compute_delay(cls, env, row)
-                
-                if aoi is not None:
-                    device_id = row['device_id']
-                    aoi_logs_per_user[device_id] = aoi_logs_per_user.get(device_id, 0) + aoi
 
-        # If a device has no packets at this timestep, set age of information to zero
+        # Filter for accomplished packets at the current timestep
+        accomplished_packets = env.job_generator.packet_df_ue[
+            (env.job_generator.packet_df_ue['is_accomplished']) &
+            (env.job_generator.packet_df_ue['accomplished_time'] == env.time)
+        ].copy()  # Use .copy() to avoid SettingWithCopyWarning
+
+        if not accomplished_packets.empty:
+            # Compute AoI for all accomplished packets
+            accomplished_packets.loc[:, 'aoi'] = accomplished_packets.apply(
+                lambda row: compute_delay(cls, env, row), axis=1  # Use cls to call compute_delay
+            )
+
+            # Group by device_id and sum the AoI for each device
+            aoi_per_device = accomplished_packets.groupby('device_id')['aoi'].sum()
+
+            # Update the AoI logs
+            aoi_logs_per_user.update(aoi_per_device.to_dict())
+
+        # Set AoI to zero for devices without packets at this timestep
         for device_id in env.users.keys():
             if device_id not in aoi_logs_per_user:
                 aoi_logs_per_user[device_id] = 0
-            
-        # Log the delays
-        #env.logger.log_reward(f"Time step: {env.time} Delays per device: {aoi_logs_per_user}")
-        
+
+        # Log the delays (Optional: Uncomment if logging is needed)
+        # env.logger.log_reward(f"Time step: {env.time} Delays per device: {aoi_logs_per_user}")
+
         return aoi_logs_per_user
+
 
     @classmethod
     def check(cls, env) -> None:
@@ -220,3 +243,20 @@ class MComSmartCityHandler(Handler):
     def info(cls, env) -> Dict:
         """Compute information for feedback loop."""
         return {}
+    
+    @classmethod
+    def info(cls, env) -> Dict:
+        """Compute information for feedback loop."""
+        return {
+            "time": env.time,                                 # Current timestep
+            "cumulative_reward": env.episode_reward,          # Total reward for the episode
+            "num_active_users": len(env.active),              # Number of active users
+            "num_active_sensors": len(env.active_sensor),     # Number of active sensors
+            "mean_data_rate": np.mean(list(env.datarates.values())) if env.datarates else 0,
+            "dropped_ue_jobs": env.delayed_ue_jobs,        
+            "dropped_sensor_jobs": env.delayed_sensor_jobs,
+            "num_connections": {
+                "users": len(env.connections),
+                "sensors": len(env.datarates_sensor),
+            },
+        }
