@@ -104,6 +104,14 @@ class MComCore(gymnasium.Env):
         # define RNG (as of now: unused)
         self.rng = None
 
+        # stores traffic request logs
+        self.ue_traffic_logs = {}
+        self.sensor_traffic_logs = {}
+
+        # stores computation request logs
+        self.ue_computation_logs = {}
+        self.sensor_computation_logs = {}
+
         # Instantiate JobGenerator and DataTransferManager
         self.job_generator = JobGenerator(self)
         self.data_transfer_manager = DataTransferManager(self)
@@ -176,10 +184,17 @@ class MComCore(gymnasium.Env):
             }
 
         # Initialize age of information logs for UEs
-        if not hasattr(self, 'aoi_logs'):
-            self.aoi_logs = {
+        if not hasattr(self, 'aori_logs'):
+            self.aori_logs = {
                 'time': [],
-                'aoi_logs': []
+                'aori_logs': []
+            }
+        
+        # Initialize age of information logs for sensors
+        if not hasattr(self, 'aosi_logs'):
+            self.aosi_logs = {
+                'time': [],
+                'aosi_logs': []
             }
             
         # parameters for pygame visualization
@@ -250,18 +265,18 @@ class MComCore(gymnasium.Env):
             # default ue job generation config
             "ue_job": {
                 "job_generation_probability": 0.7,
-                "communication_job_lambda_value": 3.0,    # in MB
+                "communication_job_lambda_value": 10.0,    # in MB
                 "computation_job_lambda_value": 10.0,       # in units
             },
             # default sensor job generation config
             "sensor_job": {
-                "communication_job_lambda_value": 2.5,    # in MB
+                "communication_job_lambda_value": 5.0,    # in MB
                 "computation_job_lambda_value": 5.0,        # in units
             },
             # default delay threshold for packets
             "e2e_delay_threshold": 5,
             "reward_calculation": {
-                "ue_penalty": -1,
+                "ue_penalty": -5,
                 "discount_factor": 0.95,
                 "base_reward": 10,
                 "positive_discount_factor": 0.9,      # Discount factor for positive delay
@@ -393,6 +408,14 @@ class MComCore(gymnasium.Env):
         self.utilities = {}
         # reset sensors utilities
         self.utilities_sensor = {}
+
+        # reset traffic request logs
+        self.ue_traffic_logs = {}
+        self.sensor_traffic_logs = {}
+
+        # reset computation request logs
+        self.ue_computation_logs = {}
+        self.sensor_computation_logs = {}
         
         # reset number of delayed packets        
         self.delayed_ue_jobs = 0
@@ -443,9 +466,14 @@ class MComCore(gymnasium.Env):
             'throughput_sensor': []
         }
         
-        self.aoi_logs = {
+        self.aori_logs = {
             'time': [],
-            'aoi_logs': []
+            'aori_logs': []
+        }
+
+        self.aosi_logs = {
+            'time': [],
+            'aosi_logs': []
         }
 
         # Reset episode reward
@@ -572,58 +600,26 @@ class MComCore(gymnasium.Env):
                     self.connections_sensor[closest_bs] = set()
                 self.connections_sensor[closest_bs].add(sensor)
 
-    # TODO: improve this functionality
-    def update_sensor_logs(self):
-        '''Checks if UE is in range and adds the timestamp to the log of the UE'''
-        for ue in self.users.values(): 
-            ue_point = ue.point
-
-            for sensor_id, sensor in self.sensors.items():
-                if sensor.is_within_range(ue_point):
-                    # Ensure ue.ue_id is a string if sensor.logs uses string keys
-                    ue_id_str = str(ue.ue_id)
-                    # Check if the UE is detected, initialize a list if not
-                    if ue_id_str not in sensor.logs:
-                        sensor.logs[ue_id_str] = [self.time]
-                    else:
-                        # If the UE has already been detected, append the current time
-                        sensor.logs[ue_id_str].append(self.time)
-            
-            # Log the current state of all sensor logs after processing each UE
-            #self.logger.log_simulation(f"Sensor {sensor_id} logs after processing UE {ue.ue_id}: {sensor.logs}")
-
     def step(self, actions: Tuple[float, float]):
         assert not self.time_is_up, "step() called on terminated episode"
-
-        start_time = time.time()
-        log_times = {}
 
         #self.logger.log_simulation(f"Time step: {self.time} Establishing connections...")
 
         # connect UEs and sensors to the closest base station and establish connection
-        t_start = time.time()
         self.connect_bs_ue()
         self.connect_bs_sensor()
-        log_times['connect_bs'] = time.time() - t_start
 
         # check snr thresholds, release established connections that moved e.g. out-of-range
-        t_start = time.time()
         self.update_connections()
         self.update_connections_sensors()
-        log_times['update_connections'] = time.time() - t_start
-
-        # Logging base station connections
-        #self.logger.log_all_connections()
 
         # Generate jobs for each UE and sensor
         #self.logger.log_simulation(f"Time step: {self.time} Job generation starting...")
 
-        t_start = time.time()
         for ue in self.users.values():
             self.job_generator.generate_job_ue(ue)
         for sensor in self.sensors.values():
             self.job_generator.generate_job_sensor(sensor)
-        log_times['generate_jobs'] = time.time() - t_start
 
         #self.logger.log_simulation(f"Time step: {self.time} Job generation terminated...")
 
@@ -631,16 +627,13 @@ class MComCore(gymnasium.Env):
         #self.logger.log_all_queues()
 
         # apply handler to transform actions to expected shape
-        t_start = time.time()
         bandwidth_allocation, computational_allocation = self.handler.action(self, actions)
-        log_times['action_transformation'] = time.time() - t_start
 
         #self.logger.log_simulation(f"Time step: {self.time} Action applied...")
         #self.logger.log_simulation(f"Time step: {self.time} Communication resource allocation to UEs in percentage: {bandwidth_allocation * 100:.2f} %")
         #self.logger.log_simulation(f"Time step: {self.time} Computation resource allocation to UEs in percentage: {computational_allocation * 100:.2f} %")
 
         # Store the resource allocations for each BS in the dictionary
-        t_start = time.time()
         self.resource_allocations = {}
         for bs in self.stations.values():
             bandwidth_for_ues, bandwidth_for_sensors, computational_power_for_ues, \
@@ -652,13 +645,11 @@ class MComCore(gymnasium.Env):
                 'computational_power_for_ues': computational_power_for_ues,
                 'computational_power_for_sensors': computational_power_for_sensors
             }
-        log_times['apply_actions'] = time.time() - t_start
 
         # log the resource allocations
         self.log_resource_allocations(bandwidth_allocation, computational_allocation)
             
         # update connections' data rates after re-scheduling
-        t_start = time.time()
         self.datarates = {}
         for bs in self.stations.values():
             drates_ue = self.station_allocation(bs, bandwidth_for_ues)
@@ -668,23 +659,17 @@ class MComCore(gymnasium.Env):
         for bs in self.stations.values():
             drates_sensor = self.station_allocation_sensor(bs, bandwidth_for_sensors)
             self.datarates_sensor.update(drates_sensor)
-        
-        log_times['update_datarates'] = time.time() - t_start
 
         # update macro (aggregated) data rates for each UE
-        t_start = time.time()
         self.macro = self.macro_datarates(self.datarates)
         self.macro_sensor = self.macro_datarates_sensor(self.datarates_sensor)
-        log_times['macro_datarates'] = time.time() - t_start
 
         # logging datarates
         #self.logger.log_all_datarates()
 
         # packet uplink transmission
         #self.logger.log_simulation(f"Time step: {self.time} Job transfer starting...")
-        t_start = time.time()
         self.data_transfer_manager.transfer_data_uplink()
-        log_times['data_transfer'] = time.time() - t_start
         #self.logger.log_simulation(f"Time step: {self.time} Job transfer over...")
 
         # log sensor and ue data queues
@@ -692,9 +677,7 @@ class MComCore(gymnasium.Env):
 
         # process data in MEC servers
         #self.logger.log_simulation(f"Time step: {self.time} Data processing starting...")
-        t_start = time.time()
         self.data_process_manager.process_data_mec(computational_power_for_ues, computational_power_for_sensors)
-        log_times['data_processing'] = time.time() - t_start
         #self.logger.log_simulation(f"Time step: {self.time} Data processing over...")
 
         # log sensor and ue data queues
@@ -710,9 +693,7 @@ class MComCore(gymnasium.Env):
         #self.job_generator.log_df_sensor()
         
         # check all the e2e delay threshold for all jobs
-        t_start = time.time()
         delayed_ue_packets, delayed_sensor_packets = self.check_packet_delays()
-        log_times['check_delays'] = time.time() - t_start
         #self.logger.log_simulation(f"Time step: {self.time} Delayed packets: {delayed_ue_packets} UE and {delayed_sensor_packets} sensor")        
 
         # log the number of dropped jobs
@@ -720,11 +701,10 @@ class MComCore(gymnasium.Env):
         self.log_total_delayed_packets()
         
         # log the age of information for UEs
-        #aoi_per_user = self.handler.aoi_per_user(self)
-        #self.log_aoi_per_user(aoi_per_user)
+        aori = self.handler.aori_per_user(self)
+        self.log_aori_per_user(aori)
 
         # compute utilities from UEs' data rates & log its mean value
-        t_start = time.time()
         self.utilities = {
             ue: self.utility.utility(self.macro[ue]) for ue in self.active
         }
@@ -743,12 +723,9 @@ class MComCore(gymnasium.Env):
         self.utilities_sensor = {
             sensor: self.utility.scale(util) for sensor, util in self.utilities_sensor.items()
         }
-        log_times['compute_utilities'] = time.time() - t_start
 
         # compute rewards
-        t_start = time.time()
         rewards = self.handler.reward(self)
-        log_times['compute_rewards'] = time.time() - t_start
 
         # Accumulate rewards for the current episode
         self.episode_reward += rewards
@@ -757,9 +734,7 @@ class MComCore(gymnasium.Env):
         self.log_rewards(rewards)
 
         # evaluate metrics and update tracked metrics given the core simulation
-        t_start = time.time()
         self.monitor.update(self)
-        log_times['update_movements'] = time.time() - t_start
 
         # move user equipments around; update positions of UEs
         for ue in self.active:
@@ -771,7 +746,6 @@ class MComCore(gymnasium.Env):
             self.connections[bs] = ues - leaving
 
         # update list of active UEs & add those that begin to request service
-        t_start = time.time()
         self.active = sorted(
             [
                 ue
@@ -789,7 +763,6 @@ class MComCore(gymnasium.Env):
             ],
             key=lambda sensor: sensor.sensor_id,
         )
-        log_times['update_active'] = time.time() - t_start
 
         # update internal time of environment
         self.time += 1
@@ -805,7 +778,6 @@ class MComCore(gymnasium.Env):
         # compute observations for next step and information
         # methods are defined by handler according to strategy pattern
         # NOTE: compute observations after proceeding in time (may skip ahead)
-        t_start = time.time()
         observation = self.handler.observation(self)
 
         # Ensure observation is of type np.float32
@@ -813,8 +785,6 @@ class MComCore(gymnasium.Env):
 
         # Clip observation to ensure it is within the observation space bounds
         observation = np.clip(observation, self.observation_space.low, self.observation_space.high)
-
-        log_times['compute_observation'] = time.time() - t_start
         
         info = self.handler.info(self)
 
@@ -829,13 +799,6 @@ class MComCore(gymnasium.Env):
         # If the episode ends, include the total reward
         if truncated: 
             info["episode"] = {"r": self.episode_reward}
-
-        # Log total time
-        log_times['total'] = time.time() - start_time
-
-        # Log timings to file
-        with open("step_timing_log.txt", "a") as log_file:
-            log_file.write(f"Step {self.time} timing breakdown: {log_times}\n")
 
         return observation, rewards, terminated, truncated, info
 
@@ -1389,10 +1352,10 @@ class MComCore(gymnasium.Env):
         self.total_delayed_packet_logs['total_delayed_ue_packets'].append(self.delayed_ue_jobs)
         self.total_delayed_packet_logs['total_delayed_sensor_packets'].append(self.delayed_sensor_jobs)
         
-    def log_aoi_per_user(self, aoi_per_device):
-        """Logs the age of information for every user for every timestep."""
-        self.aoi_logs['time'].append(self.time)
-        self.aoi_logs['aoi_logs'].append(aoi_per_device)
+    def log_aori_per_user(self, aori_per_device):
+        """Logs the age of information for every UE for every timestep."""
+        self.aori_logs['time'].append(self.time)
+        self.aori_logs['aori_logs'].append(aori_per_device)
 
     def log_rewards(self, reward):
         """Logs the reward at each time step."""
@@ -1589,50 +1552,49 @@ class MComCore(gymnasium.Env):
         plt.tight_layout()
         plt.show()
 
-    def plot_aoi_per_device(self):
+    def plot_aori_per_device(self):
         """Plots the AoI over time with a separate plot for each user device."""
+        # Extract time and AoI logs
+        times = self.aori_logs['time']
+        aori_logs = self.aori_logs['aori_logs']
 
-        # Ensure time and aoi_logs are the same length
-        if len(self.aoi_logs['time']) != len(self.aoi_logs['aoi_logs']):
-            raise ValueError("Mismatch in lengths of time steps and AoI logs.")
+        # Collect AoI data for each UE
+        ue_aori_data = {}
+        max_time_len = len(times)
 
-        # Identify all device IDs
-        device_ids = set()
-        for log in self.aoi_logs['aoi_logs']:
-            device_ids.update(log.keys())
-            
-        # Initialize dictionary to hold AoI data for each device over time
-        device_aoi_data = {device_id: [] for device_id in device_ids}
+        for timestep_data in aori_logs:
+            if timestep_data is None:  # Skip None entries
+                continue
+            for ue_id, aori in timestep_data.items():
+                if ue_id not in ue_aori_data:
+                    ue_aori_data[ue_id] = []
+                ue_aori_data[ue_id].append(aori)
 
-        # Fill in AoI data for each device at each time step
-        for log in self.aoi_logs['aoi_logs']:
-            for device_id in device_ids:
-                device_aoi_data[device_id].append(log.get(device_id, 0))
+            # Fill missing UEs with None for this timestep
+            for ue_id in ue_aori_data:
+                if len(ue_aori_data[ue_id]) < len(times):
+                    ue_aori_data[ue_id].append(None)
 
-        # Determine the grid layout for subplots based on the number of devices
-        num_devices = len(device_ids)
-        num_cols = 3  # Adjust as needed
-        num_rows = math.ceil(num_devices / num_cols)
+        # Ensure all AoI data lists match the length of times
+        for ue_id in ue_aori_data:
+            while len(ue_aori_data[ue_id]) < max_time_len:
+                ue_aori_data[ue_id].append(None)
 
-        # Plot AoI for each device in a separate subplot
-        fig, axes = plt.subplots(num_rows, num_cols, figsize=(15, num_rows * 4))
-        axes = axes.flatten()  # Flatten in case there are fewer devices than subplots
+        # Sort UE IDs
+        sorted_ue_ids = sorted(ue_aori_data.keys())
 
-        for idx, (device_id, aoi_values) in enumerate(device_aoi_data.items()):
-            ax = axes[idx]
-            ax.plot(self.aoi_logs['time'], aoi_values, label=f"Device {device_id}")
-            ax.set_xlabel("Time Steps")
-            ax.set_ylabel("Age of Information (AoI)")
-            ax.set_title(f"Device {device_id}")
-            ax.grid(True)
-            ax.legend()
-
-        # Turn off any unused subplots
-        for i in range(num_devices, len(axes)):
-            fig.delaxes(axes[i])
-
-        plt.tight_layout()
-        plt.show()
+        # Create a separate plot for each UE in sorted order
+        for ue_id in sorted_ue_ids:
+            aori_values = ue_aori_data[ue_id]
+            plt.figure(figsize=(10, 5))
+            plt.plot(times, aori_values, label=f'UE {ue_id}', marker='o')
+            plt.xlabel('Time')
+            plt.ylabel('Age of Information (AoRI)')
+            plt.title(f'AoI for UE {ue_id}')
+            plt.grid(True)
+            plt.tight_layout()
+            plt.legend()
+            plt.show()
 
 
     def close(self) -> None:

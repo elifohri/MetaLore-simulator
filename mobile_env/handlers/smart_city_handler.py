@@ -42,6 +42,9 @@ class MComSmartCityHandler(Handler):
         bandwidth_allocation = max(0.0, min(1.0, bandwidth_allocation))
         computational_allocation = max(0.0, min(1.0, computational_allocation))
 
+        # Log action
+        env.logger.log_reward(f"Time step: {env.time} Action: {bandwidth_allocation}, {computational_allocation}")
+
         return bandwidth_allocation, computational_allocation
     
     @classmethod
@@ -59,20 +62,12 @@ class MComSmartCityHandler(Handler):
         normalized_queue_lengths = queue_lengths / max_queue_lengths  
         env.logger.log_reward(f"Time step: {env.time} Queue lengths: {normalized_queue_lengths}")
 
-        # Get resource utilization (bandwidth and CPU)
-        #resource_utilization = np.array(env.get_resource_utilization()).ravel()
-        #env.logger.log_reward(f"Time step: {env.time} Resource utilization: {resource_utilization}")   
-        
-        #if queue_lengths.shape != (4,) or resource_utilization.shape != (2,):
-            #raise ValueError(f"Unexpected shapes: queue_lengths {queue_lengths.shape}, resource_utilization {resource_utilization.shape}")
-
         if normalized_queue_lengths.shape != (4,):
             raise ValueError(f"Unexpected shapes: queue_lengths {normalized_queue_lengths.shape}")
 
         # Concatenate all observations into a single array
         observation = np.concatenate([
             normalized_queue_lengths,              # 4 values
-            #resource_utilization        # 2 values
         ]).astype(np.float32)
         
         return observation
@@ -104,29 +99,32 @@ class MComSmartCityHandler(Handler):
         ]
 
         if not valid_packets.empty:
-            valid_packets = valid_packets.copy()
+            valid_ue_packets = valid_packets.copy()
 
             # Compute 'computed_delay' column
-            valid_packets['computed_delay'] = valid_packets.apply(
-                lambda row: cls.compute_delay(cls, env, row), axis=1
+            valid_ue_packets['computed_delay'] = valid_ue_packets.apply(
+                lambda row: cls.compute_absolute_delay(cls, env, row), axis=1
             )
 
-            valid_packets['reward'] = base_reward * (discount_factor ** valid_packets['computed_delay'])
-            total_reward += valid_packets['reward'].sum()
+            valid_ue_packets['reward'] = base_reward * (discount_factor ** valid_ue_packets['computed_delay'])
+            total_reward += valid_ue_packets['reward'].sum()
 
         total_reward += penalties.sum()
+
+        # Group delays by UE
+        delay_logs_per_user = accomplished_packets.groupby('device_id')['delay'].mean().to_dict()
+
+        # Append delay logs and current time
+        env.aosi_logs['time'].append(env.time)
+        env.aosi_logs['aosi_logs'].append(delay_logs_per_user)
 
         env.job_generator.packet_df_ue.drop(accomplished_packets.index, inplace=True)
         env.logger.log_reward(f"Time step: {env.time} Total reward applied at this time step: {total_reward}.")
 
         return total_reward
     
-    def compute_delay(cls, env, ue_packet: pd.Series) -> float:
+    def compute_absolute_delay(cls, env, ue_packet: pd.Series) -> float:
         """Computes the delay between the latest accomplished sensor packet and the UE packet."""
-
-        # Debugging: Check the type of ue_packet
-        if not isinstance(ue_packet, pd.Series):
-            raise TypeError(f"Expected pd.Series, got {type(ue_packet)} instead.")
 
         # Find all accomplished sensor packets
         accomplished_sensor_packets = env.job_generator.packet_df_sensor[
@@ -135,7 +133,6 @@ class MComSmartCityHandler(Handler):
         ].copy()
 
         if accomplished_sensor_packets.empty:
-            #env.logger.log_reward(f"Time step: {env.time} No accomplished sensor packets found.")
             return None
 
         # Find the latest accomplished_time
@@ -158,13 +155,9 @@ class MComSmartCityHandler(Handler):
 
         return delay
     
-    
     def compute_positive_delay(cls, env, ue_packet: pd.Series) -> float:
-        """
-        Computes the positive delay between the latest accomplished sensor packet
-        (generated before the corresponding UE packet) and the UE packet. Only
-        sensor data generated before the UE packet is considered.
-        """
+        """Computes the positive delay between the latest accomplished sensor packet
+        (generated before the corresponding UE packet) and the UE packet."""
 
         # Find all accomplished sensor packets that have been completed
         accomplished_sensor_packets = env.job_generator.packet_df_sensor[
@@ -173,7 +166,6 @@ class MComSmartCityHandler(Handler):
         ]
 
         if accomplished_sensor_packets.empty:
-            #env.logger.log_reward(f"Time step: {env.time} No accomplished sensor packets found.")
             return None
 
         # Filter for sensor packets created before the UE packet creation time
@@ -183,7 +175,6 @@ class MComSmartCityHandler(Handler):
         ]
 
         if valid_sensor_packets.empty:
-            #env.logger.log_reward(f"Time step: {env.time} No sensor packets generated before UE packet {ue_packet['packet_id']}.")
             return None
 
         # If there are multiple packets with the same accomplished_time, choose the one with the highest creation_time
@@ -198,39 +189,64 @@ class MComSmartCityHandler(Handler):
         return positive_delay
     
     @classmethod
-    def aoi_per_user(cls, env) -> None:
-        """Logs age of information (AoI) per user device at each timestep."""
-        aoi_logs_per_user = {}
+    def aori_per_user(cls, env) -> None:
+        """Computes the Age of Information (AoI) for UE packets."""
 
         # Filter for accomplished packets at the current timestep
         accomplished_packets = env.job_generator.packet_df_ue[
             (env.job_generator.packet_df_ue['is_accomplished']) &
             (env.job_generator.packet_df_ue['accomplished_time'] == env.time)
-        ].copy()  # Use .copy() to avoid SettingWithCopyWarning
+        ].copy()
 
-        if not accomplished_packets.empty:
-            # Compute AoI for all accomplished packets
-            accomplished_packets.loc[:, 'aoi'] = accomplished_packets.apply(
-                lambda row: compute_delay(cls, env, row), axis=1  # Use cls to call compute_delay
-            )
+        # Skip if no packets were accomplished at this timestep
+        if accomplished_packets.empty:
+            return None
 
-            # Group by device_id and sum the AoI for each device
-            aoi_per_device = accomplished_packets.groupby('device_id')['aoi'].sum()
+        # Compute AoI (accomplished_time - creation_time)
+        accomplished_packets['AoI'] = (
+            accomplished_packets['accomplished_time'] - accomplished_packets['creation_time']
+        )
 
-            # Update the AoI logs
-            aoi_logs_per_user.update(aoi_per_device.to_dict())
+        # Group AoI by user
+        aoi_logs_per_user = accomplished_packets.groupby('device_id')['AoI'].mean().to_dict()
 
-        # Set AoI to zero for devices without packets at this timestep
-        for device_id in env.users.keys():
-            if device_id not in aoi_logs_per_user:
-                aoi_logs_per_user[device_id] = 0
-
-        # Log the delays (Optional: Uncomment if logging is needed)
-        # env.logger.log_reward(f"Time step: {env.time} Delays per device: {aoi_logs_per_user}")
+        # Log AoI values for each user
+        for ue_id, aoi in aoi_logs_per_user.items():
+            env.logger.log_reward(f"Time step: {env.time}, UE: {ue_id}, AoI: {aoi}")
 
         return aoi_logs_per_user
 
+    @classmethod
+    def aosi_per_user(cls, env) -> None:
+        """Logs age of information (AoI) per user device at each timestep."""
 
+        # Find all accomplished sensor packets
+        accomplished_sensor_packets = env.job_generator.packet_df_sensor[
+            (env.job_generator.packet_df_sensor['is_accomplished']) &
+            (env.job_generator.packet_df_sensor['accomplished_time'].notnull())
+        ].copy()
+
+        if accomplished_sensor_packets.empty:
+            return None
+
+        # Find the latest accomplished_time
+        latest_accomplished_time = accomplished_sensor_packets['accomplished_time'].max()
+
+        # Filter packets with the highest accomplished_time
+        latest_packets = accomplished_sensor_packets[
+            accomplished_sensor_packets['accomplished_time'] == latest_accomplished_time
+        ].copy()
+
+        # If there are multiple packets with the same accomplished_time, choose the one with the highest creation_time
+        latest_sensor_packet = latest_packets.loc[latest_packets['creation_time'].idxmax()]
+
+        # Calculate the delay
+        sensor_generating_time = latest_sensor_packet['creation_time']
+        ue_generating_time = ue_packet['creation_time']
+        delay = abs(ue_generating_time - sensor_generating_time)
+
+        return aosi_logs_per_user
+    
     @classmethod
     def check(cls, env) -> None:
         """Check if handler is applicable to simulation configuration."""
@@ -250,13 +266,9 @@ class MComSmartCityHandler(Handler):
         return {
             "time": env.time,                                 # Current timestep
             "cumulative_reward": env.episode_reward,          # Total reward for the episode
-            "num_active_users": len(env.active),              # Number of active users
-            "num_active_sensors": len(env.active_sensor),     # Number of active sensors
+            "num_users": len(env.users),                      # Number of users
+            "num_sensors": len(env.sensors),                  # Number of sensors
             "mean_data_rate": np.mean(list(env.datarates.values())) if env.datarates else 0,
-            "dropped_ue_jobs": env.delayed_ue_jobs,        
-            "dropped_sensor_jobs": env.delayed_sensor_jobs,
-            "num_connections": {
-                "users": len(env.connections),
-                "sensors": len(env.datarates_sensor),
-            },
+            "delayed_ue_jobs": env.delayed_ue_jobs,        
+            "delayed_sensor_jobs": env.delayed_sensor_jobs,
         }

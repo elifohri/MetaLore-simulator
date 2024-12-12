@@ -94,10 +94,24 @@ class JobGenerator:
             'e2e_delay_threshold': self.config["e2e_delay_threshold"]
         }
 
+        if device_type == SENSOR:
+            if time not in self.env.sensor_traffic_logs:
+                self.env.sensor_traffic_logs[time] = 0
+            self.env.sensor_traffic_logs[time] += communication_request_size
+            if time not in self.env.sensor_computation_logs:
+                self.env.sensor_computation_logs[time] = 0
+            self.env.sensor_computation_logs[time] += computation_request
+        elif device_type == USER_DEVICE:
+            if time not in self.env.ue_traffic_logs:
+                self.env.ue_traffic_logs[time] = 0
+            self.env.ue_traffic_logs[time] += communication_request_size
+            if time not in self.env.ue_computation_logs:
+                self.env.ue_computation_logs[time] = 0
+            self.env.ue_computation_logs[time] += computation_request
+
         # Convert job to data frame and concatenate with existing data frame
         # TODO: use another way, more optimized way, to add the generated packet to df
         packet_df = pd.DataFrame([packet])
-        
 
         if device_type == SENSOR:
             if self.packet_df_sensor.empty:
@@ -145,11 +159,5 @@ class JobGenerator:
         
     def reset_data_frames(self):
         # Reset the job data frames
-        self.packet_df_ue = pd.DataFrame(columns=[
-            'packet_id', 'device_type', 'device_id', 'is_transferred', 'is_accomplished', 
-            'creation_time', 'arrival_time', 'accomplished_time', 'e2e_delay_threshold'
-        ])
-        self.packet_df_sensor = pd.DataFrame(columns=[
-            'packet_id', 'device_type', 'device_id', 'is_transferred', 'is_accomplished', 
-            'creation_time', 'arrival_time', 'accomplished_time', 'e2e_delay_threshold'
-        ])
+        self.packet_df_ue.drop(self.packet_df_ue.index, inplace=True)
+        self.packet_df_sensor.drop(self.packet_df_sensor.index, inplace=True)
