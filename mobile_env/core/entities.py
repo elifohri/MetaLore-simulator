@@ -1,6 +1,6 @@
-from typing import Tuple, Dict, Optional
+from typing import Tuple
 from shapely.geometry import Point
-from mobile_env.core.buffers import JobQueue
+from mobile_env.core.job_queue import JobQueue
 
 
 class BaseStation:
@@ -81,19 +81,12 @@ class Sensor:
             height: float,
             snr_tr: float,
             noise: float,
-            velocity: float,
-            radius: float,
-            logs: Optional[Dict[int, int]] = None,
     ):
         self.sensor_id = sensor_id
         self.x, self.y = pos
         self.height = height
         self.snr_threshold = snr_tr
         self.noise = noise
-        self.velocity = velocity
-        self.radius = radius
-        self.logs = logs if logs else {}
-        self.connected_base_station: Optional[BaseStation] = None
         self.data_buffer_uplink = self._init_job_queue()
 
     @property
@@ -105,12 +98,3 @@ class Sensor:
     
     def _init_job_queue(self) -> JobQueue:
         return JobQueue()
-
-    def _initialize_sensor_logs(self, sensors: list):
-        for sensor in sensors:
-            if not isinstance(sensor.logs, dict):
-                sensor.logs = {}
-
-    def _is_within_range(self, ue_point):
-        """Check if a UE is within the sensor's range."""
-        return self.point.distance(ue_point) <= self.radius

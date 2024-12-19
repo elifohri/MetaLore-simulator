@@ -4,9 +4,9 @@ from mobile_env.core.util import deep_dict_merge
 import random
 
 NUM_SENSOR = 20
-NUM_UE = 5
+NUM_UE = 10
 MAX_DISTANCE = 100
-MIN_DISTANCE = 5
+MIN_DISTANCE = 2
 
 class MComSmartCity(MComCore):
     def __init__(self, config={}, render_mode=None):
