@@ -7,7 +7,7 @@ Device = Union[UserEquipment, Sensor]
 Job = Dict[str, Optional[Union[float, int]]]
 
 
-class MetricsDataFrame:
+class JobDataFrame:
     """
     Logs and tracks the jobs as data frames for reward calculation and RL.
     """
@@ -20,14 +20,14 @@ class MetricsDataFrame:
         # Main DataFrames to store all packets for reward computation
         self.df_ue_packets = pd.DataFrame(columns=[
             'packet_id', 'device_type', 'device_id', 'is_transferred', 'is_accomplished', 
-            'creation_time', 'arrival_time', 'accomplished_time', 'e2e_delay_threshold'
+            'creation_time', 'arrival_time', 'accomplished_time', 'e2e_delay_threshold', 'e2e_delay', 'synch_delay'
         ])
         self.df_sensor_packets = pd.DataFrame(columns=[
             'packet_id', 'device_type', 'device_id', 'is_transferred', 'is_accomplished', 
-            'creation_time', 'arrival_time', 'accomplished_time', 'e2e_delay_threshold'
+            'creation_time', 'arrival_time', 'accomplished_time', 'e2e_delay_threshold', 'e2e_delay', 'synch_delay'
         ])
 
-    def update_data_frame(self, job: Job) -> None:
+    def update_after_processing(self, job: Job) -> None:
         # Update the respective data frame for reward and penalty calculation accomplished jobs
         packet = {
             'packet_id': job['packet_id'],
@@ -36,11 +36,13 @@ class MetricsDataFrame:
             'is_transferred': True,
             'is_accomplished': True,
             'creation_time': job['creation_time'],
-            'arrival_time': job.get('transfer_time_end', None),
-            'accomplished_time': job.get('processing_time_end', None),
-            'e2e_delay_threshold': self.config[E2E_THRESHOLD]
+            'arrival_time': job['transfer_time_end'],
+            'accomplished_time': self.env.time,
+            'e2e_delay_threshold': self.config[E2E_THRESHOLD],
+            'e2e_delay': job['total_accomplishment_time'],
+            'synch_delay': None
         }
-
+ 
         if job[DEVICE_TYPE] == USER_DEVICE:
             self.df_ue_packets = pd.concat(
                 [self.df_ue_packets, pd.DataFrame([packet])], ignore_index=True

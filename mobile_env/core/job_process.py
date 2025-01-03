@@ -13,10 +13,10 @@ class JobProcessManager:
     in a Mobile Edge Computing (MEC) environment.
     """
 
-    def __init__(self, env, metrics_logger):
+    def __init__(self, env, data_frame):
         self.env = env
         self.logger = env.logger
-        self.metrics_logger = metrics_logger
+        self.data_frame = data_frame
 
     def process_data_for_mec(self, ue_computational_power: float, sensor_computational_power: float) -> None:
         for bs in self.env.stations.values():
@@ -35,7 +35,7 @@ class JobProcessManager:
                 job = transferred_jobs_queue.dequeue_job()
                 self._update_job_timing(job)
                 accomplished_jobs_queue.enqueue_job(job)
-                self.metrics_logger.update_data_frame(job)
+                self.data_frame.update_after_processing(job)
                 self.log_processed_job(job)
                 computational_power -= job['computation_request']
 

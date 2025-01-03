@@ -73,7 +73,7 @@ class JobTransferManager:
             if full_transfer:
                 self.logger.log_simulation(f"Time step: {self.env.time} Job: {job['packet_id']} fully transferred from {src} to {dst}.")
             else:
-                self.logger.log_simulation(f"Time step: {self.env.time} Job: {job['packet_id']} partially transferred from {src} to {dst}, bits send {bits_to_send}.")
+                self.logger.log_simulation(f"Time step: {self.env.time} Job: {job['packet_id']} partially transferred from {src} to {dst}, bits send {bits_to_send:.3f}.")
             
     def log_job_details(self, job: Job) -> None:
         self.logger.log_simulation(

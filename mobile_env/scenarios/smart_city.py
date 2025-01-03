@@ -4,9 +4,9 @@ from mobile_env.core.util import deep_dict_merge
 import random
 
 NUM_SENSOR = 20
-NUM_UE = 10
-MAX_DISTANCE = 100
-MIN_DISTANCE = 2
+NUM_UE = 5
+MAX_DISTANCE = 100         # Maximum distance from any base station
+MIN_DISTANCE = 2           # Minimum distance between sensors and between sensors and base stations
 
 class MComSmartCity(MComCore):
     def __init__(self, config={}, render_mode=None):
@@ -28,8 +28,8 @@ class MComSmartCity(MComCore):
 
         # Initialize sensors
         num_sensors = NUM_SENSOR
-        max_distance = MAX_DISTANCE                # Maximum distance from any base station
-        min_distance = MIN_DISTANCE                # Minimum distance between sensors and between sensors and base stations
+        max_distance = MAX_DISTANCE             
+        min_distance = MIN_DISTANCE                
         sensor_positions = self.place_sensors(num_sensors, station_positions, max_distance, min_distance)
 
         sensors = self.create_sensors(num_sensors, sensor_positions, config["sensor"])
@@ -38,24 +38,15 @@ class MComSmartCity(MComCore):
 
     def create_stations(self, station_positions, bs_config):
         """Create base stations given their positions and configuration."""
-        return [
-            BaseStation(bs_id, pos, **bs_config)
-            for bs_id, pos in enumerate(station_positions)
-        ]
+        return [BaseStation(bs_id, pos, **bs_config)for bs_id, pos in enumerate(station_positions)]
 
     def create_user_equipments(self, num_ues, ue_config):
         """Create user equipment objects based on their configuration."""
-        return [
-            UserEquipment(ue_id, **ue_config) 
-            for ue_id in range(num_ues)
-        ]
+        return [UserEquipment(ue_id, **ue_config) for ue_id in range(num_ues)]
 
     def create_sensors(self, num_sensors, sensor_positions, sensor_config):
         """Create sensors based on their positions and configuration."""
-        return [
-            Sensor(sensor_id, position, **sensor_config) 
-            for sensor_id, position in enumerate(sensor_positions)
-        ]
+        return [Sensor(sensor_id, position, **sensor_config) for sensor_id, position in enumerate(sensor_positions)]
 
     def place_sensors(self, num_sensors, station_positions, max_distance, min_distance):
         """Place sensors far from each other and away from multiple base stations."""

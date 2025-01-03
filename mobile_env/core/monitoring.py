@@ -60,7 +60,6 @@ class Monitor:
 
     def load_results(self):
         """Outputs results of tracked metrics as data frames."""
-        import pandas as pd  # Make sure to import pandas
 
         # Load scalar results with index (metric; time)
         scalar_results = pd.DataFrame(self.scalar_results)
@@ -73,8 +72,11 @@ class Monitor:
             for ue_id in set().union(*entries)
         }
         ue_results = pd.DataFrame(ue_results).transpose()
-        ue_results.index.names = ["Metric", "UE ID"]
-        # Change data frame format to align time axis along rows
+
+        # Convert index to MultiIndex
+        ue_results.index = pd.MultiIndex.from_tuples(ue_results.index, names=["Metric", "UE ID"])
+
+        # Align time axis along rows
         ue_results = ue_results.stack()
         ue_results.index.names = ["Metric", "UE ID", "Time Step"]
         ue_results = ue_results.reorder_levels(["Time Step", "UE ID", "Metric"])
@@ -87,8 +89,11 @@ class Monitor:
             for bs_id in set().union(*entries)
         }
         bs_results = pd.DataFrame(bs_results).transpose()
-        bs_results.index.names = ["Metric", "BS ID"]
-        # Change data frame format to align time axis along rows
+
+        # Convert index to MultiIndex
+        bs_results.index = pd.MultiIndex.from_tuples(bs_results.index, names=["Metric", "BS ID"])
+
+        # Align time axis along rows
         bs_results = bs_results.stack()
         bs_results.index.names = ["Metric", "BS ID", "Time Step"]
         bs_results = bs_results.reorder_levels(["Time Step", "BS ID", "Metric"])
@@ -101,15 +106,17 @@ class Monitor:
             for sensor_id in set().union(*entries)
         }
         ss_results = pd.DataFrame(ss_results).transpose()
-        ss_results.index.names = ["Metric", "Sensor ID"]
-        # Change data frame format to align time axis along rows
+
+        # Convert index to MultiIndex
+        ss_results.index = pd.MultiIndex.from_tuples(ss_results.index, names=["Metric", "Sensor ID"])
+
+        # Align time axis along rows
         ss_results = ss_results.stack()
         ss_results.index.names = ["Metric", "Sensor ID", "Time Step"]
         ss_results = ss_results.reorder_levels(["Time Step", "Sensor ID", "Metric"])
         ss_results = ss_results.unstack()
 
         return scalar_results, ue_results, bs_results, ss_results
-
 
     def info(self):
         """Outputs the latest results as a dictionary."""
@@ -124,7 +131,3 @@ class Monitor:
         ss_info = {name: values[-1] for name, values in self.ss_results.items()}
 
         return {**scalar_info, **ue_info, **bs_info, **ss_info}
-
-    def sensor_measurements(simulation):
-    # Implementation that uses the simulation object
-        pass

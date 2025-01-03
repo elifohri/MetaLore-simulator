@@ -53,7 +53,7 @@ class LoggerManager:
                     self.log_simulation(
                         f"Time step: {self.env.time} {queue_name} - {entity}: "
                         f"Job: {job['packet_id']}, Initial: {job['initial_request_size']} MB, "
-                        f"Remaining: {job['remaining_request_size']} MB, Computation: {job['computation_request']} units"
+                        f"Remaining: {job['remaining_request_size']:.3f} MB, Computation: {job['computation_request']} units"
                     )
 
     def log_connections(self, env) -> None:
@@ -64,9 +64,9 @@ class LoggerManager:
     def log_datarates(self, env) -> None:
         # Log data transfer rates for all connections.
         for (bs, ue), rate in sorted(self.env.datarates.items(), key=lambda x: x[0][1].ue_id):
-            self.log_simulation(f"Time step: {env.time} Data rate for {ue} -> {bs} -> {rate} MB/s")
+            self.log_simulation(f"Time step: {env.time} Data rate for {ue} -> {bs} -> {rate:.3f} MB/s")
         for (bs, sensor), rate in sorted(self.env.datarates_sensor.items(), key=lambda x: x[0][1].sensor_id):
-            self.log_simulation(f"Time step: {env.time} Data rate for {sensor} -> {bs} -> {rate} MB/s")
+            self.log_simulation(f"Time step: {env.time} Data rate for {sensor} -> {bs} -> {rate:.3f} MB/s")
 
     def log_job_queues(self, env) -> None:
         # Log jobs across all queues.

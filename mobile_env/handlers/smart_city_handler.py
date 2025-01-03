@@ -2,17 +2,17 @@ from typing import Dict, Tuple
 import numpy as np
 from gymnasium import spaces
 import logging
-from mobile_env.handlers.delay import DelayCalculator
+from mobile_env.handlers.delay import DelayManager
 from mobile_env.handlers.handler import Handler
+from mobile_env.core import metrics
 
 
 class MComSmartCityHandler(Handler):
 
     features = ["queue_lengths"]
 
-    def __init__(self, env, logger: logging.Logger,):
+    def __init__(self, env):
         self.env = env
-        self.logger = logger  
 
     @classmethod
     def obs_size(cls, env) -> int:
@@ -39,15 +39,29 @@ class MComSmartCityHandler(Handler):
         bandwidth_allocation = max(0.0, min(1.0, bandwidth_allocation))
         computational_allocation = max(0.0, min(1.0, computational_allocation))
 
-        env.logger.log_reward(f"Time step: {env.time} Action: {bandwidth_allocation}, {computational_allocation}")
+        env.logger.log_reward(f"Time step: {env.time} Action: {bandwidth_allocation:.3f}, {computational_allocation:.3f}")
 
         return bandwidth_allocation, computational_allocation
     
     @classmethod
+    def get_queue_lengths(cls, env) -> np.ndarray:
+        """Return queue lengths from the base station for transferred jobs and accomplished jobs."""
+        # Use the correct metric functions to get queue sizes
+        transferred_ue_queue_size = np.array(list(metrics.get_bs_transferred_ue_queue_size(env).values()))
+        transferred_sensor_queue_size = np.array(list(metrics.get_bs_transferred_sensor_queue_size(env).values()))
+        accomplished_ue_queue_size = np.array(list(metrics.get_bs_accomplished_ue_queue_size(env).values()))
+        accomplished_sensor_queue_size = np.array(list(metrics.get_bs_accomplished_sensor_queue_size(env).values()))
+
+        # Combine all queue sizes into a single array
+        queue_lengths = np.concatenate([transferred_ue_queue_size, transferred_sensor_queue_size,
+                                        accomplished_ue_queue_size, accomplished_sensor_queue_size])
+
+        return queue_lengths
+
+    @classmethod
     def observation(cls, env) -> np.ndarray:
         """Compute observations for the RL agent."""
-        
-        queue_lengths = np.array(env.get_queue_lengths()).ravel()
+        queue_lengths = np.array(cls.get_queue_lengths(env)).ravel()
         env.logger.log_reward(f"Time step: {env.time} Queue lengths: {queue_lengths}")    
         
         # Define maximum queue sizes for normalization
@@ -60,63 +74,46 @@ class MComSmartCityHandler(Handler):
         if normalized_queue_lengths.shape != (4,):
             raise ValueError(f"Unexpected shapes: queue_lengths {normalized_queue_lengths.shape}")
 
-        observation = np.concatenate([
-            normalized_queue_lengths
-        ]).astype(np.float32)
+        observation = np.concatenate([normalized_queue_lengths]).astype(np.float32)
         
         return observation
-
+    
+    
     @classmethod
     def reward(cls, env) -> float:
         """Process UE packets: apply penalties, rewards, and update the data frame."""
         total_reward = 0
+        penalties = 0
         config = env.default_config()["reward_calculation"]
         penalty = config["ue_penalty"]
         base_reward = config["base_reward"]
         discount_factor = config["discount_factor"]
 
-        accomplished_packets = env.metrics_logger.df_ue_packets[
-            (env.metrics_logger.df_ue_packets['is_accomplished']) &
-            (env.metrics_logger.df_ue_packets['accomplished_time'] == env.time)
-        ].copy()
+        # Find all accomplished UE packets at that timestep
+        accomplished_ue_packets = env.delay_manager.get_accomplished_ue_packets()
 
-        if accomplished_packets.empty:
+        if accomplished_ue_packets.empty:
+            env.logger.log_reward(f"Time step: {env.time} There are no accomplished UE packets.")
             return total_reward
-
-        # Compute delays and penalties
-        accomplished_packets['delay'] = env.time - accomplished_packets['creation_time']
-        penalties = (accomplished_packets['delay'] > accomplished_packets['e2e_delay_threshold']) * penalty
-
-        # Compute rewards for valid packets
-        valid_packets = accomplished_packets[
-            accomplished_packets['delay'] <= accomplished_packets['e2e_delay_threshold']
-        ]
-
-        if not valid_packets.empty:
-            valid_ue_packets = valid_packets.copy()
-
-            # Compute 'computed_delay' column
-            valid_ue_packets['computed_delay'] = valid_ue_packets.apply(
-                lambda row: DelayCalculator.compute_absolute_delay(env, row), axis=1
-            )
-
-            valid_ue_packets['reward'] = base_reward * (discount_factor ** valid_ue_packets['computed_delay'])
-            total_reward += valid_ue_packets['reward'].sum()
-
+                
+        # Compute penalty for packets that have delayed the threshold
+        penalties = (accomplished_ue_packets['e2e_delay'] > accomplished_ue_packets['e2e_delay_threshold']) * penalty
         total_reward += penalties.sum()
 
-        # Group delays by UE
-        delay_logs_per_user = accomplished_packets.groupby('device_id')['delay'].mean().to_dict()
+        env.logger.log_reward(f"Time step: {env.time} Total penalty applied: {penalties.sum():.3f}.")
 
-        # Append delay logs and current time
-        env.aosi_logs['time'].append(env.time)
-        env.aosi_logs['aosi_logs'].append(delay_logs_per_user)
+        valid_ue_packets = accomplished_ue_packets[accomplished_ue_packets['e2e_delay'] <= accomplished_ue_packets['e2e_delay_threshold']]
 
-        env.metrics_logger.df_ue_packets.drop(accomplished_packets.index, inplace=True)
-        env.logger.log_reward(f"Time step: {env.time} Total reward applied at this time step: {total_reward}.")
+        # Compute reward for packets that haven't delayed the threshold
+        if not valid_ue_packets.empty:
+            valid_ue_packets['reward'] = base_reward * (discount_factor ** valid_ue_packets['synch_delay'])
+            total_reward += valid_ue_packets['reward'].sum()
+
+        env.logger.log_reward(f"Time step: {env.time} Total reward applied: {total_reward:.3f}.")
 
         return total_reward
-    
+
+
     @classmethod
     def check(cls, env) -> None:
         """Check if handler is applicable to simulation configuration."""
@@ -124,21 +121,14 @@ class MComSmartCityHandler(Handler):
             ue.stime <= 0.0 and ue.extime >= env.EP_MAX_TIME
             for ue in env.users.values()
         ), "Central environment cannot handle a changing number of UEs."
-
-    @classmethod
-    def info(cls, env) -> Dict:
-        """Compute information for feedback loop."""
-        return {}
+        
     
     @classmethod
     def info(cls, env) -> Dict:
         """Compute information for feedback loop."""
         return {
             "time": env.time,
-            "cumulative_reward": env.episode_reward,
+            "reward": metrics.get_reward,
             "num_users": len(env.users),
             "num_sensors": len(env.sensors),
-            "mean_data_rate": np.mean(list(env.datarates.values())) if env.datarates else 0,
-            "delayed_ue_jobs": env.delayed_ue_jobs,        
-            "delayed_sensor_jobs": env.delayed_sensor_jobs,
         }
