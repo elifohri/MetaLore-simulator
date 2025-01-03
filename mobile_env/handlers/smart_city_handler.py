@@ -1,20 +1,18 @@
 from typing import Dict, Tuple
-
 import numpy as np
 from gymnasium import spaces
-import pandas as pd
-from typing import Optional
-
+import logging
+from mobile_env.handlers.delay import DelayManager
 from mobile_env.handlers.handler import Handler
+from mobile_env.core import metrics
 
 
 class MComSmartCityHandler(Handler):
 
-    features = ["queue_lengths", "resource_utilization"]
+    features = ["queue_lengths"]
 
     def __init__(self, env):
         self.env = env
-        self.logger = env.logger  
 
     @classmethod
     def obs_size(cls, env) -> int:
@@ -29,115 +27,92 @@ class MComSmartCityHandler(Handler):
     def observation_space(cls, env) -> spaces.Box:
         """Define observation space"""
         size = cls.obs_size(env)
-        env.logger.log_reward(f"Observation size is: {size}")        
-        return spaces.Box(low=-1.0, high=1.0, shape=(size,), dtype=np.float32)
+        #env.logger.log_reward(f"Time step: {env.time} Observation Space size is: {size}")        
+        return spaces.Box(low=0.0, high=np.inf, shape=(size,), dtype=np.float32)
 
     @classmethod
     def action(cls, env, actions: Tuple[float, float]) -> Tuple[float, float]:
-        bandwidth_allocation = np.clip(actions[0], 0.0, 1.0)
-        computational_allocation = np.clip(actions[1], 0.0, 1.0)
+        """Transform action to expected shape of core environment."""
+        assert len(actions) == 2, "Action must have two elements: bandwidth allocation and computational power allocation."
+
+        bandwidth_allocation, computational_allocation = actions
+        bandwidth_allocation = max(0.0, min(1.0, bandwidth_allocation))
+        computational_allocation = max(0.0, min(1.0, computational_allocation))
+
+        env.logger.log_reward(f"Time step: {env.time} Action: {bandwidth_allocation:.3f}, {computational_allocation:.3f}")
+
         return bandwidth_allocation, computational_allocation
+    
+    @classmethod
+    def get_queue_lengths(cls, env) -> np.ndarray:
+        """Return queue lengths from the base station for transferred jobs and accomplished jobs."""
+        # Use the correct metric functions to get queue sizes
+        transferred_ue_queue_size = np.array(list(metrics.get_bs_transferred_ue_queue_size(env).values()))
+        transferred_sensor_queue_size = np.array(list(metrics.get_bs_transferred_sensor_queue_size(env).values()))
+        accomplished_ue_queue_size = np.array(list(metrics.get_bs_accomplished_ue_queue_size(env).values()))
+        accomplished_sensor_queue_size = np.array(list(metrics.get_bs_accomplished_sensor_queue_size(env).values()))
+
+        # Combine all queue sizes into a single array
+        queue_lengths = np.concatenate([transferred_ue_queue_size, transferred_sensor_queue_size,
+                                        accomplished_ue_queue_size, accomplished_sensor_queue_size])
+
+        return queue_lengths
 
     @classmethod
     def observation(cls, env) -> np.ndarray:
-        """Compute system-wide observations for the RL agent."""
+        """Compute observations for the RL agent."""
+        queue_lengths = np.array(cls.get_queue_lengths(env)).ravel()
+        env.logger.log_reward(f"Time step: {env.time} Queue lengths: {queue_lengths}")    
         
-        # Gather the queue lengths (from base station)
-        queue_lengths = np.array(env.get_queue_lengths(), dtype=np.float32).ravel()
-        env.logger.log_reward(f"Queue lengths: {queue_lengths}")      
+        # Define maximum queue sizes for normalization
+        max_queue_lengths = np.array([500, 2000, 500, 2000])
 
-        # Get resource utilization (bandwidth and CPU)
-        resource_utilization = np.array(env.get_resource_utilization(), dtype=np.float32)
-        env.logger.log_reward(f"Resource utilization: {resource_utilization}")   
+        # Normalize queue lengths
+        normalized_queue_lengths = queue_lengths / max_queue_lengths  
+        env.logger.log_reward(f"Time step: {env.time} Normalized queue lengths: {normalized_queue_lengths}")
 
-        # Get the frequency of requests or updates (if used)
-        # request_frequency = np.array(env.get_request_frequency(), dtype=np.float32)
-        # env.logger.log_reward(f"Request frequency: {request_frequency}")
+        if normalized_queue_lengths.shape != (4,):
+            raise ValueError(f"Unexpected shapes: queue_lengths {normalized_queue_lengths.shape}")
 
-        # Concatenate all observations into a single array
-        observation = np.concatenate([
-            queue_lengths,              # 4 values
-            resource_utilization,       # 2 values
-            # request_frequency         # Uncomment if used
-        ]).astype(np.float32)
+        observation = np.concatenate([normalized_queue_lengths]).astype(np.float32)
         
         return observation
-
-    @classmethod
-    def reset(cls, env, seed: Optional[int] = None):
-        # Reset any internal state or RNGs here
-        cls.state_variable = 3  # Example of resetting state
-        if seed is not None:
-            np.random.seed(seed)
-
+    
+    
     @classmethod
     def reward(cls, env) -> float:
         """Process UE packets: apply penalties, rewards, and update the data frame."""
         total_reward = 0
+        penalties = 0
         config = env.default_config()["reward_calculation"]
         penalty = config["ue_penalty"]
         base_reward = config["base_reward"]
         discount_factor = config["discount_factor"]
 
-        # List of packets that exceeded the delay constraint or were accomplished
-        indices_to_remove_ue_jobs = []
+        # Find all accomplished UE packets at that timestep
+        accomplished_ue_packets = env.delay_manager.get_accomplished_ue_packets()
 
-        for index, row in env.job_generator.packet_df_ue.iterrows():
-            # Check if packet is accomplished at this timestep
-            if row['is_accomplished'] and row['accomplished_time'] == env.time:
-                # Packet is accomplished in this time step
-                dt = env.time - row['creation_time']
+        if accomplished_ue_packets.empty:
+            env.logger.log_reward(f"Time step: {env.time} There are no accomplished UE packets.")
+            return total_reward
                 
-                if dt > row['e2e_delay_threshold']:
-                    # Packet exceeds threshold, penalty applied
-                    total_reward += penalty
-                    env.logger.log_reward(f"Time step: {env.time} Packet {row['packet_id']} from UE {row['device_id']} failed due to delay. Penalty applied: {penalty}.")
-                else:
-                    # Packet succeeded within the time threshold, compute delay and reward
-                    delay = cls.compute_delay(cls, env, row)
-                    reward = base_reward * (discount_factor ** delay)        
-                    total_reward += reward
-                    env.logger.log_reward(f"Time step: {env.time} Packet {row['packet_id']} from UE {row['device_id']} succeeded within time threshold. Reward applied: {reward}.")
+        # Compute penalty for packets that have delayed the threshold
+        penalties = (accomplished_ue_packets['e2e_delay'] > accomplished_ue_packets['e2e_delay_threshold']) * penalty
+        total_reward += penalties.sum()
 
-                # Mark as processed and remove from the data frame
-                indices_to_remove_ue_jobs.append(index)
+        env.logger.log_reward(f"Time step: {env.time} Total penalty applied: {penalties.sum():.3f}.")
 
-        # Drop processed UE packets
-        if indices_to_remove_ue_jobs:
-            env.job_generator.packet_df_ue.drop(indices_to_remove_ue_jobs, inplace=True)
+        valid_ue_packets = accomplished_ue_packets[accomplished_ue_packets['e2e_delay'] <= accomplished_ue_packets['e2e_delay_threshold']]
+
+        # Compute reward for packets that haven't delayed the threshold
+        if not valid_ue_packets.empty:
+            valid_ue_packets['reward'] = base_reward * (discount_factor ** valid_ue_packets['synch_delay'])
+            total_reward += valid_ue_packets['reward'].sum()
+
+        env.logger.log_reward(f"Time step: {env.time} Total reward applied: {total_reward:.3f}.")
 
         return total_reward
-    
-    def compute_delay(cls, env, ue_packet: pd.Series) -> float:
-        """Computes the delay between the latest accomplished sensor packet and the UE packet."""
 
-        # Find all accomplished sensor packets
-        accomplished_sensor_packets = env.job_generator.packet_df_sensor[
-            (env.job_generator.packet_df_sensor['is_accomplished']) &
-            (env.job_generator.packet_df_sensor['accomplished_time'].notnull())
-        ]
-
-        if accomplished_sensor_packets.empty:
-            env.logger.log_reward("No accomplished sensor packets found.")
-            return 0
-
-        # Find the latest accomplished_time
-        latest_accomplished_time = accomplished_sensor_packets['accomplished_time'].max()
-
-        # Filter packets with the highest accomplished_time
-        latest_packets = accomplished_sensor_packets[
-            accomplished_sensor_packets['accomplished_time'] == latest_accomplished_time
-        ]
-
-        # If there are multiple packets with the same accomplished_time, choose the one with the highest creation_time
-        latest_sensor_packet = latest_packets.loc[latest_packets['creation_time'].idxmax()]
-
-        # Calculate the delay
-        sensor_generating_time = latest_sensor_packet['creation_time']
-        ue_generating_time = ue_packet['creation_time']
-        delay = abs(ue_generating_time - sensor_generating_time)
-
-        return delay
 
     @classmethod
     def check(cls, env) -> None:
@@ -146,8 +121,14 @@ class MComSmartCityHandler(Handler):
             ue.stime <= 0.0 and ue.extime >= env.EP_MAX_TIME
             for ue in env.users.values()
         ), "Central environment cannot handle a changing number of UEs."
-
+        
+    
     @classmethod
     def info(cls, env) -> Dict:
         """Compute information for feedback loop."""
-        return {}
+        return {
+            "time": env.time,
+            "reward": metrics.get_reward,
+            "num_users": len(env.users),
+            "num_sensors": len(env.sensors),
+        }

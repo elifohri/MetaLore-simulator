@@ -1,6 +1,6 @@
-from typing import Tuple, Dict, Optional
+from typing import Tuple
 from shapely.geometry import Point
-from mobile_env.core.buffers import JobQueue
+from mobile_env.core.job_queue import JobQueue
 
 
 class BaseStation:
@@ -23,13 +23,6 @@ class BaseStation:
         self.height = height  # in m
         self.computational_power = computational_power  # units
 
-        # Initialize data buffers for UEs and Sensors
-        self.data_buffer_uplink_ue = self._init_job_queue()
-        self.data_buffer_uplink_sensor = self._init_job_queue()
-        self.data_buffer_downlink_ue = self._init_job_queue()
-        self.data_buffer_downlink_sensor = self._init_job_queue()
-
-        # Existing buffers (if still needed)
         self.transferred_jobs_ue = self._init_job_queue()
         self.transferred_jobs_sensor = self._init_job_queue()
         self.accomplished_jobs_ue = self._init_job_queue()
@@ -41,9 +34,9 @@ class BaseStation:
 
     def __str__(self):
         return f"BS: {self.bs_id}"
-        
+
     def _init_job_queue(self) -> JobQueue:
-        return JobQueue(size=1000)
+        return JobQueue()
 
 
 class UserEquipment:
@@ -77,7 +70,7 @@ class UserEquipment:
         return f"UE: {self.ue_id}"
     
     def _init_job_queue(self) -> JobQueue:
-        return JobQueue(size=1000)
+        return JobQueue()
 
 
 class Sensor:
@@ -88,19 +81,12 @@ class Sensor:
             height: float,
             snr_tr: float,
             noise: float,
-            velocity: float,
-            radius: float,
-            logs: Optional[Dict[int, int]] = None,
     ):
         self.sensor_id = sensor_id
         self.x, self.y = pos
         self.height = height
         self.snr_threshold = snr_tr
         self.noise = noise
-        self.velocity = velocity
-        self.radius = radius
-        self.logs = logs if logs else {}
-        self.connected_base_station: Optional[BaseStation] = None
         self.data_buffer_uplink = self._init_job_queue()
 
     @property
@@ -111,13 +97,4 @@ class Sensor:
         return f"Sensor: {self.sensor_id}"
     
     def _init_job_queue(self) -> JobQueue:
-        return JobQueue(size=1000)
-
-    def _initialize_sensor_logs(self, sensors: list["Sensor"]):
-        for sensor in sensors:
-            if not isinstance(sensor.logs, dict):
-                sensor.logs = {}
-
-    def _is_within_range(self, ue_point):
-        """Check if a UE is within the sensor's range."""
-        return self.point.distance(ue_point) <= self.radius
+        return JobQueue()
