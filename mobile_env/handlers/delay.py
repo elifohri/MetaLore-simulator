@@ -34,7 +34,7 @@ class DelayManager:
         accomplished_sensor_packets = self.get_accomplished_sensor_packets()
 
         if accomplished_ue_packets.empty or accomplished_sensor_packets.empty:
-            self.env.logger.log_reward(f"Time step: {self.env.time} No accomplished UE or sensor packets found.")
+            #self.env.logger.log_reward(f"Time step: {self.env.time} No accomplished UE or sensor packets found.")
             return None
         
         latest_accomplished_sensor_packet = self.get_latest_accomplished_sensor_packet(accomplished_sensor_packets)
@@ -56,7 +56,7 @@ class DelayManager:
         accomplished_sensor_packets = self.get_accomplished_sensor_packets()
 
         if accomplished_ue_packets.empty or accomplished_sensor_packets.empty:
-            self.env.logger.log_reward(f"Time step: {self.env.time} No accomplished UE or sensor packets found.")
+            #self.env.logger.log_reward(f"Time step: {self.env.time} No accomplished UE or sensor packets found.")
             return None
         
         positive_delays = []

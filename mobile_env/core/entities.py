@@ -61,6 +61,7 @@ class UserEquipment:
         self.stime: int = None
         self.extime: int = None
         self.data_buffer_uplink = self._init_job_queue()
+        self.total_traffic_request: float = 0.0
 
     @property
     def point(self):
@@ -71,6 +72,9 @@ class UserEquipment:
     
     def _init_job_queue(self) -> JobQueue:
         return JobQueue()
+    
+    def update_traffic_requests(self, traffic_request: float) -> None:
+        self.total_traffic_request = traffic_request
 
 
 class Sensor:
@@ -88,6 +92,7 @@ class Sensor:
         self.snr_threshold = snr_tr
         self.noise = noise
         self.data_buffer_uplink = self._init_job_queue()
+        self.total_traffic_request: float = 0.0
 
     @property
     def point(self):
@@ -98,3 +103,6 @@ class Sensor:
     
     def _init_job_queue(self) -> JobQueue:
         return JobQueue()
+    
+    def update_traffic_requests(self, traffic_request: float) -> None:
+        self.total_traffic_request = traffic_request

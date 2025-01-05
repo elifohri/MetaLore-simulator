@@ -43,14 +43,23 @@ class JobDataFrame:
             'synch_delay': None
         }
  
+        # Ensure the df_ue_packets is not None or empty before concatenation
         if job[DEVICE_TYPE] == USER_DEVICE:
-            self.df_ue_packets = pd.concat(
-                [self.df_ue_packets, pd.DataFrame([packet])], ignore_index=True
-            )
+            if self.df_ue_packets.empty or self.df_ue_packets.isna().all().all():
+                self.df_ue_packets = pd.DataFrame([packet])
+            else:
+                self.df_ue_packets = pd.concat(
+                    [self.df_ue_packets, pd.DataFrame([packet])], ignore_index=True
+                )
+
+        # Ensure the df_sensor_packets is not None or empty before concatenation
         elif job[DEVICE_TYPE] == SENSOR:
-            self.df_sensor_packets = pd.concat(
-                [self.df_sensor_packets, pd.DataFrame([packet])], ignore_index=True
-            )
+            if self.df_sensor_packets.empty or self.df_sensor_packets.isna().all().all():
+                self.df_sensor_packets = pd.DataFrame([packet])
+            else:
+                self.df_sensor_packets = pd.concat(
+                    [self.df_sensor_packets, pd.DataFrame([packet])], ignore_index=True
+                )
 
     def log_dataframe(self, df: pd.DataFrame, label: str) -> None:
         self.logger.log_reward(f"Time step: {self.env.time} Data frame {label}:")

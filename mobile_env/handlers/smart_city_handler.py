@@ -39,7 +39,7 @@ class MComSmartCityHandler(Handler):
         bandwidth_allocation = max(0.0, min(1.0, bandwidth_allocation))
         computational_allocation = max(0.0, min(1.0, computational_allocation))
 
-        env.logger.log_reward(f"Time step: {env.time} Action: {bandwidth_allocation:.3f}, {computational_allocation:.3f}")
+        #env.logger.log_reward(f"Time step: {env.time} Action: {bandwidth_allocation:.3f}, {computational_allocation:.3f}")
 
         return bandwidth_allocation, computational_allocation
     
@@ -62,14 +62,14 @@ class MComSmartCityHandler(Handler):
     def observation(cls, env) -> np.ndarray:
         """Compute observations for the RL agent."""
         queue_lengths = np.array(cls.get_queue_lengths(env)).ravel()
-        env.logger.log_reward(f"Time step: {env.time} Queue lengths: {queue_lengths}")    
+        #env.logger.log_reward(f"Time step: {env.time} Queue lengths: {queue_lengths}")    
         
         # Define maximum queue sizes for normalization
         max_queue_lengths = np.array([500, 2000, 500, 2000])
 
         # Normalize queue lengths
         normalized_queue_lengths = queue_lengths / max_queue_lengths  
-        env.logger.log_reward(f"Time step: {env.time} Normalized queue lengths: {normalized_queue_lengths}")
+        #env.logger.log_reward(f"Time step: {env.time} Normalized queue lengths: {normalized_queue_lengths}")
 
         if normalized_queue_lengths.shape != (4,):
             raise ValueError(f"Unexpected shapes: queue_lengths {normalized_queue_lengths.shape}")
@@ -93,23 +93,23 @@ class MComSmartCityHandler(Handler):
         accomplished_ue_packets = env.delay_manager.get_accomplished_ue_packets()
 
         if accomplished_ue_packets.empty:
-            env.logger.log_reward(f"Time step: {env.time} There are no accomplished UE packets.")
+            #env.logger.log_reward(f"Time step: {env.time} There are no accomplished UE packets.")
             return total_reward
                 
         # Compute penalty for packets that have delayed the threshold
         penalties = (accomplished_ue_packets['e2e_delay'] > accomplished_ue_packets['e2e_delay_threshold']) * penalty
         total_reward += penalties.sum()
 
-        env.logger.log_reward(f"Time step: {env.time} Total penalty applied: {penalties.sum():.3f}.")
+        #env.logger.log_reward(f"Time step: {env.time} Total penalty applied: {penalties.sum():.3f}.")
 
-        valid_ue_packets = accomplished_ue_packets[accomplished_ue_packets['e2e_delay'] <= accomplished_ue_packets['e2e_delay_threshold']]
+        valid_ue_packets = accomplished_ue_packets[accomplished_ue_packets['e2e_delay'] <= accomplished_ue_packets['e2e_delay_threshold']].copy()
 
         # Compute reward for packets that haven't delayed the threshold
         if not valid_ue_packets.empty:
             valid_ue_packets['reward'] = base_reward * (discount_factor ** valid_ue_packets['synch_delay'])
             total_reward += valid_ue_packets['reward'].sum()
 
-        env.logger.log_reward(f"Time step: {env.time} Total reward applied: {total_reward:.3f}.")
+        #env.logger.log_reward(f"Time step: {env.time} Total reward applied: {total_reward:.3f}.")
 
         return total_reward
 
@@ -128,7 +128,12 @@ class MComSmartCityHandler(Handler):
         """Compute information for feedback loop."""
         return {
             "time": env.time,
-            "reward": metrics.get_reward,
-            "num_users": len(env.users),
-            "num_sensors": len(env.sensors),
+            "reward": metrics.get_episode_reward(env),
+            "delayed UE jobs": metrics.delayed_ue_packets(env),
+            "aori": metrics.compute_aori(env),
+            "aosi": metrics.compute_aosi(env),
+            "bs trans. ue": metrics.get_bs_transferred_ue_queue_size(env),
+            "bs trans. ss": metrics.get_bs_transferred_sensor_queue_size(env),
+            "bs accomp. us": metrics.get_bs_accomplished_ue_queue_size(env),
+            "bs accomp. ss": metrics.get_bs_accomplished_sensor_queue_size(env),
         }

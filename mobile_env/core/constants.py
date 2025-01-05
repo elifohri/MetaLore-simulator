@@ -9,6 +9,9 @@ USER_DEVICE = 'user_device'
 SENSOR_JOB = 'sensor_job'
 UE_JOB = 'ue_job'
 
+# Requests
+INITIAL_REQUEST_SIZE = 'initial_request_size'
+
 # Keys for Configuration
 COMM_LAMBDA = 'communication_job_lambda_value'
 COMP_LAMBDA = 'computation_job_lambda_value'

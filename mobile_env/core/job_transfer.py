@@ -17,8 +17,15 @@ class JobTransferManager:
     def __init__(self, env):
         self.env = env
         self.logger = env.logger
+        self.throughput_ue = {}
+        self.throughput_sensor = {}
+
+    def reset_throughput(self) -> None:
+        self.throughput_ue = {ue.ue_id: 0.0 for ue in self.env.users.values()}
+        self.throughput_sensor = {sensor.sensor_id: 0.0 for sensor in self.env.sensors.values()}
 
     def transfer_data_uplink(self) -> None:
+        self.reset_throughput()
         for bs in self.env.stations.values():
             self._transfer_job_to_bs(bs, self.env.connections.get(bs, []))
             self._transfer_job_to_bs(bs, self.env.connections_sensor.get(bs, []))
@@ -42,13 +49,16 @@ class JobTransferManager:
             data_transfer_rate -= bits_to_send
             self._update_job_request_size(job, bits_to_send)
 
+            # Update the transferred data tracking
+            self._update_transferred_data(src, bits_to_send)
+
             if job['remaining_request_size'] <= 0:
                 job = src_buffer.dequeue_job()
                 self._update_job_timing(job)
                 dst_buffer.enqueue_job(job)
-                self.log_transferred_job(src, dst, job, bits_to_send, full_transfer=True)
+                #self.log_transferred_job(src, dst, job, bits_to_send, full_transfer=True)
             else:
-                self.log_transferred_job(src, dst, job, bits_to_send, full_transfer=False)
+                #self.log_transferred_job(src, dst, job, bits_to_send, full_transfer=False)
                 break
 
     def _get_data_rate(self, src: Device, dst: BaseStation) -> float:
@@ -68,6 +78,12 @@ class JobTransferManager:
         job['transfer_time_end'] = self.env.time
         job['total_transfer_time'] = job['transfer_time_end'] - job['transfer_time_start']
         job['device_queue_waiting_time'] = job['transfer_time_end'] - job['creation_time']
+
+    def _update_transferred_data(self, src: Device, bits_to_send: float) -> None:
+        if isinstance(src, UserEquipment):
+            self.throughput_ue[src.ue_id] += bits_to_send
+        elif isinstance(src, Sensor):
+            self.throughput_sensor[src.sensor_id] += bits_to_send
 
     def log_transferred_job(self, src: Device, dst: BaseStation, job: Job, bits_to_send: float, full_transfer: bool) -> None:
             if full_transfer:

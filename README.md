@@ -6,8 +6,9 @@ This simulator is developed as part of a Master's and PhD research project to ex
  
  A key contribution of the project is the novel delay modeling method integrated into the RL reward function that prioritizes synchronization between the digital and physical worlds. It leverages the age of information (AoI) to enhance user interaction quality and ensure continuity between physical and digital counterparts.
 
- ![Screenshot](Metalore_SS.png)
-
+<center>
+  <img src="Metalore_SS.png" alt="Description" width="400">
+</center>
 
 
 ## Installation

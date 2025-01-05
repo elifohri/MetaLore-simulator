@@ -79,6 +79,27 @@ def sensor_closest_distance(sim):
     return distances
 
 
+def get_datarate_ue(sim):
+    """Get datarate of UEs."""
+    datarate_ue = {}
+
+    for ue in sim.users.values():
+        total_data_rate_ue = sum(sim.datarates[(bs, ue)] for bs in sim.stations.values() if (bs, ue) in sim.datarates)
+        datarate_ue[ue.ue_id] = total_data_rate_ue
+
+    return datarate_ue
+
+def get_datarate_sensor(sim):
+    """Get datarate of sensors."""
+    datarate_sensor = {}
+
+    for sensor in sim.sensors.values():
+        total_data_rate_sensor = sum(sim.datarates_sensor[(bs, sensor)] for bs in sim.stations.values() if (bs, sensor) in sim.datarates_sensor)
+        datarate_sensor[sensor.sensor_id] = total_data_rate_sensor
+
+    return datarate_sensor
+
+
 def bandwidth_allocation_ue(sim):
     return round(sim.resource_allocations["bandwidth_ue"][-1], 2)
     
@@ -117,53 +138,34 @@ def get_sensor_data_queues(sim) -> Dict[int, int]:
     return {sensor.sensor_id: sensor.data_buffer_uplink.current_size() for sensor in sim.sensors.values()}
 
 
-def calculate_snr_ue(sim):
-    """Calculate the SNR for UEs in the environment."""
-    snr_ue = {}
-    
-    for ue in sim.users.values():
-        for bs in sim.stations.values():
-            if ue in sim.connections[bs]:
-                snr_value = sim.channel.snr(bs, ue)
-                snr_ue[ue.ue_id] = snr_value
-                break
+def get_traffic_request_ue(sim):
+    """Get the traffic request from all UEs at the current timestep."""
+    traffic_requests_ue = {ue.ue_id: ue.total_traffic_request for ue in sim.users.values()}
+    return traffic_requests_ue
 
-    return snr_ue
-
-def calculate_snr_sensor(sim):
-    """Calculate the SNR for sensors in the environment."""
-    snr_sensor = {}
-    
-    for sensor in sim.sensors.values():
-        for bs in sim.stations.values():
-            if sensor in sim.connections_sensor[bs]:
-                snr_value = sim.channel.snr(bs, sensor)
-                snr_sensor[sensor.sensor_id] = snr_value
-                break
-
-    return snr_sensor
+def get_traffic_request_sensor(sim):
+    """Get the traffic request from all sensors at the current timestep."""
+    traffic_requests_sensor = {sensor.sensor_id: sensor.total_traffic_request for sensor in sim.sensors.values()}
+    return traffic_requests_sensor
 
 
-def calculate_throughput_bs(sim):
-    """Calculate throughput for all base stations in the environment."""
-    throughput_bs = {}
+def get_total_traffic_request_ue(sim):
+    """Get the total traffic request from all UEs at the current timestep."""
+    total_traffic_requests_ue = sum(ue.total_traffic_request for ue in sim.users.values())
+    return total_traffic_requests_ue
 
-    for bs in sim.stations.values():
-        ue_throughput = sum(sim.datarates[(bs, ue)] for ue in sim.connections[bs])
-        sensor_throughput = sum(sim.datarates_sensor[(bs, sensor)] for sensor in sim.connections_sensor[bs])
-        total_throughput = ue_throughput + sensor_throughput
+def get_total_traffic_request_sensor(sim):
+    """Get the total traffic request from all sensors at the current timestep."""
+    total_traffic_requests_sensor = sum(sensor.total_traffic_request for sensor in sim.sensors.values())
+    return total_traffic_requests_sensor
 
-        throughput_bs[bs.bs_id] = total_throughput
-
-    return throughput_bs
 
 def calculate_throughput_ue(sim):
     """Calculate the throughput for UEs in the environment."""
     ue_throughput = {}
 
     for ue in sim.users.values():
-        total_data_rate_ue = sum(sim.datarates[(bs, ue)] for bs in sim.stations.values() if (bs, ue) in sim.datarates)
-        ue_throughput[ue.ue_id] = total_data_rate_ue
+        ue_throughput[ue.ue_id] = sim.job_transfer_manager.throughput_ue[ue.ue_id]
 
     return ue_throughput
 
@@ -172,10 +174,22 @@ def calculate_throughput_sensor(sim):
     sensor_throughput = {}
 
     for sensor in sim.sensors.values():
-        total_data_rate_sensor = sum(sim.datarates_sensor[(bs, sensor)] for bs in sim.stations.values() if (bs, sensor) in sim.datarates_sensor)
-        sensor_throughput[sensor.sensor_id] = total_data_rate_sensor
+        sensor_throughput[sensor.sensor_id] = sim.job_transfer_manager.throughput_sensor[sensor.sensor_id]
         
     return sensor_throughput
+
+
+def calculate_total_throughput_ue(sim):
+    """Calculate the total throughput for all UEs in the environment."""
+    ue_throughput = calculate_throughput_ue(sim)
+    total_throughput_ue = sum(ue_throughput.values())
+    return total_throughput_ue
+
+def calculate_total_throughput_sensor(sim):
+    """Calculate the total throughput for all sensors in the environment."""
+    sensor_throughput = calculate_throughput_sensor(sim)
+    total_throughput_sensor = sum(sensor_throughput.values())
+    return total_throughput_sensor
 
 
 def delayed_ue_packets(sim):
@@ -224,7 +238,7 @@ def compute_aori(sim) -> Dict:
         for ue_id, aori in aori_logs_per_user.items():
             aori_logs[ue_id] = aori
     
-    sim.logger.log_reward(f"Time step: {sim.time} AoRI logs: {aori_logs}")
+    #sim.logger.log_reward(f"Time step: {sim.time} AoRI logs: {aori_logs}")
 
     return aori_logs
     
@@ -252,50 +266,26 @@ def compute_aosi(sim) -> Dict:
 
         aosi_logs = accomplished_ue_packets.groupby('device_id')['aosi'].sum().to_dict()
 
-    sim.logger.log_reward(f"Time step: {sim.time} AoSI Logs: {aosi_logs}")
+    #sim.logger.log_reward(f"Time step: {sim.time} AoSI Logs: {aosi_logs}")
 
     return aosi_logs
 
 
-def get_traffic_request_ue(sim):
-    """Get the total traffic request from all UEs at the current timestep."""
-    traffic_requests_ue = {}
+def calculate_total_aori(sim):
+    """Calculate the total throughput for all UEs in the environment."""
+    aori = compute_aori(sim)
+    total_aori = sum(value for value in aori.values() if value is not None)
+    return total_aori
 
-    for ue in sim.users.values():
-        pass
-
-    return traffic_requests_ue
-
-def get_traffic_request_sensor(sim):
-    """Get the total traffic request from all sensors at the current timestep."""
-    traffic_requests_sensor = {}
-
-    for sensor in sim.sensors.values():
-        pass
-
-    return traffic_requests_sensor
-
-def get_computation_request_ue(sim):
-    """Get the total computation request from all UEs at the current timestep."""
-    computation_requests_ue = {}
-
-    for ue in sim.users.values():
-        pass
-
-    return computation_requests_ue
-
-def get_computation_request(sim):
-    """Get the total computation request from all UEs at the current timestep."""
-    computation_requests_sensor = {}
-
-    for sensor in sim.sensors.values():
-        pass
-
-    return computation_requests_sensor
+def calculate_total_aosi(sim):
+    """Calculate the total throughput for all sensors in the environment."""
+    aosi = compute_aosi(sim)
+    total_aosi = sum(value for value in aosi.values() if value is not None)
+    return total_aosi
 
 
 def get_reward(sim):
     return round(sim.reward, 2)
 
 def get_episode_reward(sim):
-    return round(sim.episode_reward, 2)
+    return round(sim.cumulative_reward, 2)

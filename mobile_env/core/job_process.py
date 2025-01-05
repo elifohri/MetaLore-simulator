@@ -36,14 +36,14 @@ class JobProcessManager:
                 self._update_job_timing(job)
                 accomplished_jobs_queue.enqueue_job(job)
                 self.data_frame.update_after_processing(job)
-                self.log_processed_job(job)
+                #self.log_processed_job(job)
                 computational_power -= job['computation_request']
 
                 if computational_power <= 0:
-                    self.logger.log_simulation(f"Time step: {self.env.time} MEC server computational power exhausted.")
+                    #self.logger.log_simulation(f"Time step: {self.env.time} MEC server computational power exhausted.")
                     break
             else:
-                self.logger.log_simulation(f"Time step: {self.env.time} Job: {job['packet_id']} requires more computational power than available. Skipping job.")
+                #self.logger.log_simulation(f"Time step: {self.env.time} Job: {job['packet_id']} requires more computational power than available. Skipping job.")
                 break
 
     def _update_job_timing(self, job: Job) -> None:
