@@ -34,6 +34,8 @@ class ResourceFair(Scheduler):
 
 class RateFair(Scheduler):
     def share(self, bs: BaseStation, rates: List[float]) -> List[float]:
+        # TODO: This scheduling doesnt make sense and it doesnt work
+        # TODO: Take a look at InverseWeightedRate for a better implementation
         total_inv_rate = sum([1 / rate for rate in rates])
         return 1 / total_inv_rate
     
@@ -46,11 +48,15 @@ class RateFair(Scheduler):
 
 class InverseWeightedRate(Scheduler):
     def share(self, bs: BaseStation, rates: List[float]) -> List[float]:
+        # Avoid division by zero
         if all(rate == 0 for rate in rates):
-            return [0.0] * len(rates)  # Avoid division by zero
+            return [0.0] * len(rates)
 
-        total_inv_rate = sum(1.0 / rate if rate > 0 else 0 for rate in rates)
-        return [(1.0 / rate if rate > 0 else 0) / total_inv_rate for rate in rates]
+        inverse_rates = [(1.0 / rate if rate > 0 else 0) for rate in rates]
+        total_inv_rate = sum(inverse_rates)
+        # Normalize the inverse rates
+        return  [inv_rate / total_inv_rate for inv_rate in inverse_rates]
+
     
     def share_ue(self, bs: BaseStation, rates: List[float], total_resources: float) -> List[float]:
         return self.share(bs, rates)
@@ -60,10 +66,14 @@ class InverseWeightedRate(Scheduler):
     
 
 class ProportionalFair(Scheduler):
+    # Ensures high-performing UEs with high current rates don't monopolize resources, preventsresource starvation.
+    # Adapts allocations based on real-time data rates and historical averages.
+    # UEs with consistently low current rates may still get low datarate if their historical average is also low.
+    # TODO: It has computational overhead and the performanc emay be slow
     def __init__(self, **kwargs):
         self.average_rates = {}
 
-    def share(self, bs: BaseStation, rates: List[float]) -> List[float]:
+    def share(self, bs: BaseStation, rates: List[float], total_resources: float) -> List[float]:
         if not rates:
             return []
 
@@ -79,13 +89,13 @@ class ProportionalFair(Scheduler):
         total_pf_metric = sum(pf_metric)
 
         # Allocate resources proportionally
-        return [(metric / total_pf_metric) * bs.total_resources for metric in pf_metric]
+        return [(metric / total_pf_metric) * total_resources for metric in pf_metric]
     
     def share_ue(self, bs: BaseStation, rates: List[float], ue_bandwidth: float) -> List[float]:
-        return self.share(bs, rates)
+        return self.share(bs, rates, ue_bandwidth)
 
     def share_sensor(self, bs: BaseStation, rates: List[float], sensor_bandwidth: float) -> List[float]:
-        return self.share(bs, rates)
+        return self.share(bs, rates, sensor_bandwidth)
     
 
 class RoundRobin(Scheduler):
