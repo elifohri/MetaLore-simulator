@@ -74,7 +74,7 @@ class UserEquipment:
         return JobQueue()
     
     def update_traffic_requests(self, traffic_request: float) -> None:
-        self.total_traffic_request = traffic_request
+        self.total_traffic_request += traffic_request
 
 
 class Sensor:
@@ -105,4 +105,4 @@ class Sensor:
         return JobQueue()
     
     def update_traffic_requests(self, traffic_request: float) -> None:
-        self.total_traffic_request = traffic_request
+        self.total_traffic_request += traffic_request

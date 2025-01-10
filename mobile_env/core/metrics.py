@@ -278,7 +278,7 @@ def calculate_total_aori(sim):
     return total_aori
 
 def calculate_total_aosi(sim):
-    """Calculate the total throughput for all sensors in the environment."""
+    """Calculate the total throughput for all UEs and sensor information in the environment."""
     aosi = compute_aosi(sim)
     total_aosi = sum(value for value in aosi.values() if value is not None)
     return total_aosi

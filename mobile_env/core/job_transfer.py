@@ -48,6 +48,7 @@ class JobTransferManager:
             bits_to_send = min(job['remaining_request_size'], data_transfer_rate)
             data_transfer_rate -= bits_to_send
             self._update_job_request_size(job, bits_to_send)
+            src.update_traffic_requests(-bits_to_send)
 
             # Update the transferred data tracking
             self._update_transferred_data(src, bits_to_send)

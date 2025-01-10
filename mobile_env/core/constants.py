@@ -11,6 +11,7 @@ UE_JOB = 'ue_job'
 
 # Requests
 INITIAL_REQUEST_SIZE = 'initial_request_size'
+COMPUTATION_REQUEST = 'computation_request'
 
 # Keys for Configuration
 COMM_LAMBDA = 'communication_job_lambda_value'
