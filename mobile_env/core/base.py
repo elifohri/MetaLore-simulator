@@ -19,7 +19,7 @@ from mobile_env.core.channels import OkumuraHata
 from mobile_env.core.entities import BaseStation, UserEquipment, Sensor
 from mobile_env.core.monitoring import Monitor
 from mobile_env.core.movement import RandomWaypointMovement
-from mobile_env.core.schedules import ResourceFair, RateFair, InverseWeightedRate, ProportionalFair, RoundRobin
+from mobile_env.core.schedules import ResourceFair, RateFair, InverseWeightedRate, ProportionalFair, RoundRobin, RoundRobinBandwidth
 from mobile_env.core.util import BS_SYMBOL, SENSOR_SYMBOL, deep_dict_merge
 from mobile_env.core.utilities import BoundedLogUtility
 from mobile_env.core.job_manager import JobGenerationManager
@@ -147,8 +147,8 @@ class MComCore(gymnasium.Env):
                 "bw allocation sensor": metrics.bandwidth_allocation_sensor,
                 "comp. allocation UE": metrics.computational_allocation_ue,
                 "comp. allocation sensor": metrics.computational_allocation_sensor,    
-                "delayed packets": metrics.delayed_ue_packets,         
-                "reward at timestep": metrics.get_reward,
+                "total delayed packets": metrics.delayed_ue_packets,         
+                "reward": metrics.get_reward,
                 "reward cumulative": metrics.get_episode_reward,   
                 "total aori":metrics.calculate_total_aori,
                 "total aosi": metrics.calculate_total_aosi,
@@ -170,11 +170,11 @@ class MComCore(gymnasium.Env):
         config["metrics"]["ue_metrics"].update(
             {
                 "distance UE-station": metrics.user_closest_distance, 
-                "traffic request": metrics.get_traffic_request_ue,
-                "user utility": metrics.user_utility, 
-                "user datarate": metrics.get_datarate_ue,
-                "user throughput": metrics.calculate_throughput_ue,
                 "user queue size": metrics.get_ue_data_queues,
+                "traffic request": metrics.get_traffic_request_ue,
+                "user throughput": metrics.calculate_throughput_ue,
+                "user datarate": metrics.get_datarate_ue,
+                "user utility": metrics.user_utility, 
                 "AoRI": metrics.compute_aori,
                 "AoSI": metrics.compute_aosi,
             },
@@ -184,11 +184,11 @@ class MComCore(gymnasium.Env):
         config["metrics"]["ss_metrics"].update(
             {
                 "distance sensor-station": metrics.sensor_closest_distance, 
-                "traffic request": metrics.get_traffic_request_sensor,
-                "sensor utility": metrics.user_utility_sensor, 
-                "sensor datarate": metrics.get_datarate_sensor,
-                "sensor throughput": metrics.calculate_throughput_sensor,
                 "sensor queue size": metrics.get_sensor_data_queues,
+                "traffic request": metrics.get_traffic_request_sensor,
+                "sensor throughput": metrics.calculate_throughput_sensor,
+                "sensor datarate": metrics.get_datarate_sensor,
+                "sensor utility": metrics.user_utility_sensor, 
             }
         )
 
@@ -249,7 +249,7 @@ class MComCore(gymnasium.Env):
             # default delay threshold for packets
             "e2e_delay_threshold": 3.0,
             "reward_calculation": {
-                "ue_penalty": -5.0,
+                "ue_penalty": -1.0,
                 "discount_factor": 0.95,
                 "base_reward": 10.0,
                 "positive_discount_factor": 0.9,      # Discount factor for positive delay
@@ -261,7 +261,7 @@ class MComCore(gymnasium.Env):
         aparams = {"ep_time": ep_time, "reset_rng_episode": False}
         config.update({"arrival_params": aparams})
         config.update({"channel_params": {}})
-        config.update({"scheduler_params": {"quantum": 2.0}})
+        config.update({"scheduler_params": {"quantum": 10e6}})
         mparams = {
             "width": width,
             "height": height,
@@ -332,6 +332,9 @@ class MComCore(gymnasium.Env):
         self.scheduler.reset()
         self.movement.reset()
         self.utility.reset()
+
+        # reset scheduler last served index
+        self.scheduler.reset()
         
         # reset UE, sensor, and base station queues
         for ue in self.users.values():
@@ -700,7 +703,7 @@ class MComCore(gymnasium.Env):
 
         # UE's max. data rate achievable when BS schedules all resources to it
         max_allocation = [
-            self.channel.data_rate(bs, ue, snr, bandwidth_for_ues) for snr, ue in zip(snrs, conns)
+            self.channel.data_rate(ue, bandwidth_for_ues, snr) for snr, ue in zip(snrs, conns)
         ]
 
         # BS shares resources among connected user equipments
@@ -717,13 +720,51 @@ class MComCore(gymnasium.Env):
 
         # Sensor's max. data rate achievable when BS schedules all resources to it
         max_allocation = [
-            self.channel.data_rate(bs, sensor, snr, bandwidth_for_sensors) for snr, sensor in zip(snrs_sensor, conns_sensor)
+            self.channel.data_rate(sensor, bandwidth_for_sensors, snr) for snr, sensor in zip(snrs_sensor, conns_sensor)
         ]
 
         # BS shares resources among connected sensors
         rates_sensor = self.scheduler.share_sensor(bs, max_allocation, bandwidth_for_sensors)
 
         return {(bs, sensor): rate for sensor, rate in zip(conns_sensor, rates_sensor)}
+    
+
+    def station_allocatio_roundrobin(self, bs: BaseStation, bandwidth_for_ues: float) -> Dict:
+        """Schedule BS's resources (e.g. phy. res. blocks) to connected UEs."""
+        conns = sorted(self.active, key=lambda ue: ue.ue_id)
+
+        # Compute SNR & max. data rate for each connected user equipment
+        snrs = [self.channel.snr(bs, ue) for ue in conns]
+
+        # BS shares resources among connected user equipments
+        bw_allocations = self.scheduler.share_ue(bs, bandwidth_for_ues, len(conns))
+
+        # Verify alignment of zipped pairs
+        for ue, snr, bw in zip(conns, snrs, bw_allocations):
+            self.logger.log_simulation(f"Check -> {ue}, Bandwidth: {bw}, SNR: {snr}")
+
+        rate_allocations = [self.channel.data_rate(ue, bw, snr) for ue, bw, snr in zip(conns, bw_allocations, snrs)]
+
+        return {(bs, ue): rate for ue, rate in zip(conns, rate_allocations)}
+
+    
+    def station_allocation_sensor_oundrobin(self, bs: BaseStation, bandwidth_for_sensors: float) -> Dict:
+        """Schedule BS's resources (e.g. phy. res. blocks) to connected sensors."""
+        conns_sensor = sorted(self.active_sensor, key=lambda sensor: sensor.sensor_id)
+
+        # compute SNR & max. data rate for each connected sensor
+        snrs_sensor = [self.channel.snr(bs, sensor) for sensor in conns_sensor]
+
+        # BS shares resources among connected user equipments
+        bw_allocations = self.scheduler.share_sensor(bs, bandwidth_for_sensors, len(conns_sensor))
+
+        # Verify alignment of zipped pairs
+        for sensor, snr, bw in zip(conns_sensor, snrs_sensor, bw_allocations):
+            self.logger.log_simulation(f"Check -> {sensor}, Bandwidth: {bw}, SNR: {snr}")
+
+        rate_allocations = [self.channel.data_rate(sensor, bw, snr) for sensor, bw, snr in zip(conns_sensor, bw_allocations, snrs_sensor)]
+
+        return {(bs, sensor): rate for sensor, rate in zip(conns_sensor, rate_allocations)}
     
     def station_utilities(self) -> Dict[BaseStation, UserEquipment]:
         """Compute average utility of UEs connected to the basestation."""

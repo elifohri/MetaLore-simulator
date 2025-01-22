@@ -150,3 +150,69 @@ class RoundRobin(Scheduler):
 
     def share_sensor(self, bs: BaseStation, rates: List[float], sensor_bandwidth: float) -> List[float]:
         return self.share(bs, rates, sensor_bandwidth)
+
+class RoundRobinBandwidth(Scheduler):
+    def __init__(self, quantum: float = 1.0, **kwargs):
+        super().__init__()
+        self.last_served_index_ue = {}
+        self.last_served_index_sensor = {}
+        self.quantum = quantum
+
+    def reset(self):
+        self.last_served_index_ue = {}
+        self.last_served_index_sensor = {}
+
+    def share(self, bs: BaseStation, total_resources: float, num_device: int, last_served_index, offset: int) -> List[float]:
+        if num_device == 0:
+            return []
+
+        if bs.bs_id not in last_served_index:
+            last_served_index[bs.bs_id] = -1
+
+        allocation = [0] * num_device
+        remaining_resources = total_resources
+
+        # Update the starting index to the next device for fairness
+        last_served_index[bs.bs_id] = (last_served_index[bs.bs_id] + offset) % num_device
+        start_index = last_served_index[bs.bs_id]
+
+        while remaining_resources > 0:
+            done = True
+            for i in range(num_device):
+                current_index = (start_index + i) % num_device
+
+                if remaining_resources <= 0:
+                    break
+                
+                done = False
+                allocation[current_index] += min(self.quantum, remaining_resources)
+                remaining_resources -= self.quantum
+            
+            if done:
+                break
+
+        return allocation
+
+    def share_ue(self, bs: BaseStation, ue_bandwidth: float, num_device: int) -> List[float]:
+        return self.share(bs, ue_bandwidth, num_device, self.last_served_index_ue, offset=3)
+
+    def share_sensor(self, bs: BaseStation, sensor_bandwidth: float, num_device: int) -> List[float]:
+        return self.share(bs, sensor_bandwidth, num_device, self.last_served_index_sensor, offset=3)
+
+
+if __name__ == "__main__":
+    import random
+    class BaseStation:
+        def __init__(self, bs_id, connected_ues):
+            self.bs_id = bs_id
+            self.connected_ues = connected_ues
+
+    bs = BaseStation("bs_1", ["UE1", "UE2", "UE3", "UE4"])
+    quantum = 3  # Quantum size in MHz
+
+    scheduler = RoundRobinBandwidth(quantum=quantum)
+
+    for timestep in range(1, 11):
+        total_resources = random.randint(5, 15)
+        allocation = scheduler.share(bs, total_resources, 4)
+        print(f"Timestep {timestep}: Total Resources = {total_resources}, Allocation = {allocation}")

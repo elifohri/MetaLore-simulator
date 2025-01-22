@@ -46,13 +46,11 @@ class MComSmartCityHandler(Handler):
     @classmethod
     def get_queue_lengths(cls, env) -> np.ndarray:
         """Return queue lengths from the base station for transferred jobs and accomplished jobs."""
-        # Use the correct metric functions to get queue sizes
         transferred_ue_queue_size = np.array(list(metrics.get_bs_transferred_ue_queue_size(env).values()))
         transferred_sensor_queue_size = np.array(list(metrics.get_bs_transferred_sensor_queue_size(env).values()))
         accomplished_ue_queue_size = np.array(list(metrics.get_bs_accomplished_ue_queue_size(env).values()))
         accomplished_sensor_queue_size = np.array(list(metrics.get_bs_accomplished_sensor_queue_size(env).values()))
 
-        # Combine all queue sizes into a single array
         queue_lengths = np.concatenate([transferred_ue_queue_size, transferred_sensor_queue_size,
                                         accomplished_ue_queue_size, accomplished_sensor_queue_size])
 
@@ -63,18 +61,10 @@ class MComSmartCityHandler(Handler):
         """Compute observations for the RL agent."""
         queue_lengths = np.array(cls.get_queue_lengths(env)).ravel()
         #env.logger.log_reward(f"Time step: {env.time} Queue lengths: {queue_lengths}")    
-        
-        # Define maximum queue sizes for normalization
-        max_queue_lengths = np.array([500, 2000, 500, 2000])
+        if queue_lengths.shape != (4,):
+            raise ValueError(f"Unexpected shapes: queue_lengths {queue_lengths.shape}")
 
-        # Normalize queue lengths
-        normalized_queue_lengths = queue_lengths / max_queue_lengths  
-        #env.logger.log_reward(f"Time step: {env.time} Normalized queue lengths: {normalized_queue_lengths}")
-
-        if normalized_queue_lengths.shape != (4,):
-            raise ValueError(f"Unexpected shapes: queue_lengths {normalized_queue_lengths.shape}")
-
-        observation = np.concatenate([normalized_queue_lengths]).astype(np.float32)
+        observation = np.concatenate([queue_lengths]).astype(np.float32)
         
         return observation
     
