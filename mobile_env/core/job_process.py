@@ -10,7 +10,7 @@ Job = Dict[str, Optional[Union[float, int]]]
 class JobProcessManager:
     """
     Manages the processing of jobs at base stations using available computational resources
-    in a Mobile Edge Computing (MEC) environment.
+    within the simulation environment.
     """
 
     def __init__(self, env, data_frame):

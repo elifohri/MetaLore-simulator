@@ -27,8 +27,7 @@ class MComSmartCityHandler(Handler):
     def observation_space(cls, env) -> spaces.Box:
         """Define observation space"""
         size = cls.obs_size(env)
-        #env.logger.log_reward(f"Time step: {env.time} Observation Space size is: {size}")        
-        return spaces.Box(low=0.0, high=np.inf, shape=(size,), dtype=np.float32)
+        return spaces.Box(low=0.0, high=2000.0, shape=(size,), dtype=np.float32)
 
     @classmethod
     def action(cls, env, actions: Tuple[float, float]) -> Tuple[float, float]:
@@ -39,7 +38,7 @@ class MComSmartCityHandler(Handler):
         bandwidth_allocation = max(0.0, min(1.0, bandwidth_allocation))
         computational_allocation = max(0.0, min(1.0, computational_allocation))
 
-        #env.logger.log_reward(f"Time step: {env.time} Action: {bandwidth_allocation:.3f}, {computational_allocation:.3f}")
+        env.logger.log_reward(f"Time step: {env.time} Action: {bandwidth_allocation:.3f}, {computational_allocation:.3f}")
 
         return bandwidth_allocation, computational_allocation
     
@@ -52,19 +51,20 @@ class MComSmartCityHandler(Handler):
         accomplished_sensor_queue_size = np.array(list(metrics.get_bs_accomplished_sensor_queue_size(env).values()))
 
         queue_lengths = np.concatenate([transferred_ue_queue_size, transferred_sensor_queue_size,
-                                        accomplished_ue_queue_size, accomplished_sensor_queue_size])
+                                        accomplished_ue_queue_size, accomplished_sensor_queue_size]).astype(np.float32)
 
         return queue_lengths
 
     @classmethod
     def observation(cls, env) -> np.ndarray:
         """Compute observations for the RL agent."""
-        queue_lengths = np.array(cls.get_queue_lengths(env)).ravel()
-        #env.logger.log_reward(f"Time step: {env.time} Queue lengths: {queue_lengths}")    
-        if queue_lengths.shape != (4,):
-            raise ValueError(f"Unexpected shapes: queue_lengths {queue_lengths.shape}")
+        obs = np.array(cls.get_queue_lengths(env)).ravel()
+        if obs.shape != (4,):
+            raise ValueError(f"Unexpected shapes: queue_lengths {obs.shape}")
+        
+        observation = np.clip(obs, env.observation_space.low, env.observation_space.high)
 
-        observation = np.concatenate([queue_lengths]).astype(np.float32)
+        env.logger.log_reward(f"Time step: {env.time} Observation: {observation}")
         
         return observation
     
@@ -83,14 +83,14 @@ class MComSmartCityHandler(Handler):
         accomplished_ue_packets = env.delay_manager.get_accomplished_ue_packets()
 
         if accomplished_ue_packets.empty:
-            #env.logger.log_reward(f"Time step: {env.time} There are no accomplished UE packets.")
+            env.logger.log_reward(f"Time step: {env.time} There are no accomplished UE packets.")
             return total_reward
                 
         # Compute penalty for packets that have delayed the threshold
         penalties = (accomplished_ue_packets['e2e_delay'] > accomplished_ue_packets['e2e_delay_threshold']) * penalty
         total_reward += penalties.sum()
 
-        #env.logger.log_reward(f"Time step: {env.time} Total penalty applied: {penalties.sum():.3f}.")
+        env.logger.log_reward(f"Time step: {env.time} Total penalty applied: {penalties.sum():.3f}.")
 
         valid_ue_packets = accomplished_ue_packets[accomplished_ue_packets['e2e_delay'] <= accomplished_ue_packets['e2e_delay_threshold']].copy()
 
@@ -99,7 +99,7 @@ class MComSmartCityHandler(Handler):
             valid_ue_packets['reward'] = base_reward * (discount_factor ** valid_ue_packets['synch_delay'])
             total_reward += valid_ue_packets['reward'].sum()
 
-        #env.logger.log_reward(f"Time step: {env.time} Total reward applied: {total_reward:.3f}.")
+        env.logger.log_reward(f"Time step: {env.time} Total reward applied: {total_reward:.3f}.")
 
         return total_reward
 
@@ -118,7 +118,7 @@ class MComSmartCityHandler(Handler):
         """Compute information for feedback loop."""
         return {
             "time": env.time,
-            "reward": metrics.get_episode_reward(env),
+            "reward": metrics.get_reward(env),
             "delayed UE jobs": metrics.delayed_ue_packets(env),
             "aori": metrics.compute_aori(env),
             "aosi": metrics.compute_aosi(env),

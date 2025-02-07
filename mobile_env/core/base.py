@@ -19,7 +19,7 @@ from mobile_env.core.channels import OkumuraHata
 from mobile_env.core.entities import BaseStation, UserEquipment, Sensor
 from mobile_env.core.monitoring import Monitor
 from mobile_env.core.movement import RandomWaypointMovement
-from mobile_env.core.schedules import ResourceFair, RateFair, InverseWeightedRate, ProportionalFair, RoundRobin, RoundRobinBandwidth
+from mobile_env.core.schedules import ResourceFair, RoundRobin
 from mobile_env.core.util import BS_SYMBOL, SENSOR_SYMBOL, deep_dict_merge
 from mobile_env.core.utilities import BoundedLogUtility
 from mobile_env.core.job_manager import JobGenerationManager
@@ -115,7 +115,7 @@ class MComCore(gymnasium.Env):
         self.job_transfer_manager = JobTransferManager(self)
         self.job_process_manager = JobProcessManager(self, self.job_dataframe)
 
-        # Inititalize total episode reward
+        # Inititalize rewards
         self.reward = 0
         self.cumulative_reward = 0
 
@@ -154,6 +154,8 @@ class MComCore(gymnasium.Env):
                 "total aosi": metrics.calculate_total_aosi,
                 "total throughput ue": metrics.calculate_total_throughput_ue,
                 "total throughput sensor": metrics.calculate_total_throughput_sensor,
+                "total traffic request ue": metrics.get_total_traffic_request_ue,
+                "total traffic request sensor": metrics.get_total_traffic_request_sensor,
 
             },
         )
@@ -261,7 +263,7 @@ class MComCore(gymnasium.Env):
         aparams = {"ep_time": ep_time, "reset_rng_episode": False}
         config.update({"arrival_params": aparams})
         config.update({"channel_params": {}})
-        config.update({"scheduler_params": {"quantum": 10e6}})
+        config.update({"scheduler_params": {"quantum": 7e6}})
         mparams = {
             "width": width,
             "height": height,
@@ -350,7 +352,7 @@ class MComCore(gymnasium.Env):
             bs.accomplished_jobs_sensor.clear()
             
         # call job generator reset to clear job data frames
-        self.job_dataframe.reset_packet_dataframes()
+        self.job_dataframe.reset_dataframes()
         
         # reset the job counter
         self.job_generator.job_counter = 0
@@ -408,12 +410,21 @@ class MComCore(gymnasium.Env):
         # info
         info = self.handler.info(self)
         # store latest monitored results in `info` dictionary
-        # TODO: why do we add the last monitored results here?
-        #info = {**info, **self.monitor.info()}
+        info = {**info, **self.monitor.info()}
 
         # Return initial observation
         obs = self.handler.observation(self)
         
+        
+        # Ensure the observation is of type np.float32
+        # TODO CHECK THE NP
+        obs = np.array(obs, dtype=np.float32)
+        
+        # Clip the observation to ensure it's within the observation space bounds
+        # TODO CHECK THE NP
+        obs = np.clip(obs, self.observation_space.low, self.observation_space.high)
+
+
         # Ensure the observation is of type np.float32
         # TODO CHECK THE NP
         obs = np.array(obs, dtype=np.float32)
@@ -442,9 +453,6 @@ class MComCore(gymnasium.Env):
         self.resource_allocations['bandwidth_sensor'].append(1 - bandwidth_allocation)
         self.resource_allocations['comp_power_ue'].append(computational_allocation)
         self.resource_allocations['comp_power_sensor'].append(1 - computational_allocation)
-
-        #self.logger.log_simulation(f"Time step: {self.time} Bandwidth allocated to UEs: {ue_bandwidth:.3f} Hz, to Sensors: {sensor_bandwidth:.3f} Hz")
-        #self.logger.log_simulation(f"Time step: {self.time} Computational power allocated to UEs: {ue_computational_power:.3f} units, to Sensors: {sensor_computational_power:.3f} units")
 
         return ue_bandwidth, sensor_bandwidth, ue_computational_power, sensor_computational_power
 
@@ -646,18 +654,12 @@ class MComCore(gymnasium.Env):
 
         # compute observations for next step and information
         observation = self.handler.observation(self)
-
-        # Ensure observation is of type np.float32
-        observation = np.array(observation, dtype=np.float32)
-
-        # Clip observation to ensure it is within the observation space bounds
-        observation = np.clip(observation, self.observation_space.low, self.observation_space.high)
         
+        # info
         info = self.handler.info(self)
 
         # store latest monitored results in `info` dictionary
-        # TODO: why do we add last monitored results into info
-        #info = {**info, **self.monitor.info()}
+        info = {**info, **self.monitor.info()}
 
         # update internal time of environment
         self.time += 1
@@ -679,7 +681,7 @@ class MComCore(gymnasium.Env):
         return self.time >= min(self.EP_MAX_TIME, self.max_departure)
 
     def macro_datarates(self, datarates):
-        """Compute aggregated UE data rates given all its connections."""
+        """Compute aggregated UE data rates given all its connections to all base stations."""
         epsilon = 1e-10  # Small value to prevent zero data rates
         ue_datarates = Counter()
         for (bs, ue), datarate in self.datarates.items():
@@ -687,7 +689,7 @@ class MComCore(gymnasium.Env):
         return ue_datarates
     
     def macro_datarates_sensor(self, datarates_sensor):
-        """Compute aggregated sensor data rates given all its connections."""
+        """Compute aggregated sensor data rates given all its connections to all base stations."""
         epsilon = 1e-10  # Small value to prevent zero data rates
         sensor_datarates = Counter()
         for (bs, sensor), datarate in self.datarates_sensor.items():
@@ -696,76 +698,53 @@ class MComCore(gymnasium.Env):
 
     def station_allocation(self, bs: BaseStation, bandwidth_for_ues: float) -> Dict:
         """Schedule BS's resources (e.g. phy. res. blocks) to connected UEs."""
-        conns = self.connections[bs]
-
-        # compute SNR & max. data rate for each connected user equipment
-        snrs = [self.channel.snr(bs, ue) for ue in conns]
-
-        # UE's max. data rate achievable when BS schedules all resources to it
-        max_allocation = [
-            self.channel.data_rate(ue, bandwidth_for_ues, snr) for snr, ue in zip(snrs, conns)
-        ]
-
-        # BS shares resources among connected user equipments
-        rates = self.scheduler.share_ue(bs, max_allocation, bandwidth_for_ues)
-
-        return {(bs, ue): rate for ue, rate in zip(conns, rates)}
-    
-    def station_allocation_sensor(self, bs: BaseStation, bandwidth_for_sensors: float) -> Dict:
-        """Schedule BS's resources (e.g. phy. res. blocks) to connected sensors."""
-        conns_sensor = self.connections_sensor[bs]
-
-        # compute SNR & max. data rate for each connected sensor
-        snrs_sensor = [self.channel.snr(bs, sensor) for sensor in conns_sensor]
-
-        # Sensor's max. data rate achievable when BS schedules all resources to it
-        max_allocation = [
-            self.channel.data_rate(sensor, bandwidth_for_sensors, snr) for snr, sensor in zip(snrs_sensor, conns_sensor)
-        ]
-
-        # BS shares resources among connected sensors
-        rates_sensor = self.scheduler.share_sensor(bs, max_allocation, bandwidth_for_sensors)
-
-        return {(bs, sensor): rate for sensor, rate in zip(conns_sensor, rates_sensor)}
-    
-
-    def station_allocatio_roundrobin(self, bs: BaseStation, bandwidth_for_ues: float) -> Dict:
-        """Schedule BS's resources (e.g. phy. res. blocks) to connected UEs."""
         conns = sorted(self.active, key=lambda ue: ue.ue_id)
+        #self.logger.log_simulation(f"conns: {conns}")
 
         # Compute SNR & max. data rate for each connected user equipment
         snrs = [self.channel.snr(bs, ue) for ue in conns]
+        self.logger.log_simulation(f"snrs: {snrs}")
 
         # BS shares resources among connected user equipments
-        bw_allocations = self.scheduler.share_ue(bs, bandwidth_for_ues, len(conns))
+        scheduled_bw = self.scheduler.share_ue(bs, conns, bandwidth_for_ues)
+        self.logger.log_simulation(f"scheduling: {scheduled_bw}")
+
+        # UE's max. data rate achievable when BS schedules resources to it
+        data_rate_alloc = [self.channel.data_rate(ue, bw, snr) for ue, bw, snr in zip(conns, scheduled_bw, snrs)]
+        self.logger.log_simulation(f"data rate: {data_rate_alloc}")
 
         # Verify alignment of zipped pairs
-        for ue, snr, bw in zip(conns, snrs, bw_allocations):
-            self.logger.log_simulation(f"Check -> {ue}, Bandwidth: {bw}, SNR: {snr}")
+        for ue, bw, snr in zip(conns, scheduled_bw, snrs):
+            pass
+            #self.logger.log_simulation(f"Check -> {ue}, Bandwidth: {bw}, SNR: {snr}")
 
-        rate_allocations = [self.channel.data_rate(ue, bw, snr) for ue, bw, snr in zip(conns, bw_allocations, snrs)]
-
-        return {(bs, ue): rate for ue, rate in zip(conns, rate_allocations)}
-
+        return {(bs, ue): rate for ue, rate in zip(conns, data_rate_alloc)}
     
-    def station_allocation_sensor_oundrobin(self, bs: BaseStation, bandwidth_for_sensors: float) -> Dict:
+    def station_allocation_sensor(self, bs: BaseStation, bandwidth_for_sensors: float) -> Dict:
         """Schedule BS's resources (e.g. phy. res. blocks) to connected sensors."""
-        conns_sensor = sorted(self.active_sensor, key=lambda sensor: sensor.sensor_id)
+        conns_sensors = sorted(self.active_sensor, key=lambda sensor: sensor.sensor_id)
+        #self.logger.log_simulation(f"conns: {conns_sensors}")
 
-        # compute SNR & max. data rate for each connected sensor
-        snrs_sensor = [self.channel.snr(bs, sensor) for sensor in conns_sensor]
+        # Compute SNR & max. data rate for each connected sensor
+        snrs = [self.channel.snr(bs, sensor) for sensor in conns_sensors]
+        #self.logger.log_simulation(f"snrs: {snrs}")
 
         # BS shares resources among connected user equipments
-        bw_allocations = self.scheduler.share_sensor(bs, bandwidth_for_sensors, len(conns_sensor))
+        scheduled_bw = self.scheduler.share_sensor(bs, conns_sensors, bandwidth_for_sensors)
+        self.logger.log_simulation(f"scheduling: {scheduled_bw}")
+
+        # UE's max. data rate achievable when BS schedules resources to it
+        data_rate_alloc = [self.channel.data_rate(sensor, bw, snr) for sensor, bw, snr in zip(conns_sensors, scheduled_bw, snrs)]
+        #self.logger.log_simulation(f"data rate: {data_rate_alloc}")
 
         # Verify alignment of zipped pairs
-        for sensor, snr, bw in zip(conns_sensor, snrs_sensor, bw_allocations):
-            self.logger.log_simulation(f"Check -> {sensor}, Bandwidth: {bw}, SNR: {snr}")
+        for sensor, bw, snr in zip(conns_sensors, scheduled_bw, snrs):
+            pass
+            #self.logger.log_simulation(f"Check -> {sensor}, Bandwidth: {bw}, SNR: {snr}")
 
-        rate_allocations = [self.channel.data_rate(sensor, bw, snr) for sensor, bw, snr in zip(conns_sensor, bw_allocations, snrs_sensor)]
+        return {(bs, sensor): rate for sensor, rate in zip(conns_sensors, data_rate_alloc)}
 
-        return {(bs, sensor): rate for sensor, rate in zip(conns_sensor, rate_allocations)}
-    
+
     def station_utilities(self) -> Dict[BaseStation, UserEquipment]:
         """Compute average utility of UEs connected to the basestation."""
         # set utility of BS with no active connections (idle BS) to
@@ -1010,13 +989,13 @@ class MComCore(gymnasium.Env):
         ax.set_ylim([0, self.height])
 
     def render_dashboard(self, ax) -> None:
-        mean_utilities = self.monitor.scalar_results["mean utility"]
-        mean_utility = mean_utilities[-1]
-        total_mean_utility = np.mean(mean_utilities)
+        mean_aoris = self.monitor.kpi_results["total aori"]
+        mean_aori = mean_aoris[-1]
+        total_mean_aori = np.mean(mean_aoris)
 
-        mean_datarates = self.monitor.scalar_results["mean datarate"]
-        mean_datarate = mean_datarates[-1]
-        total_mean_datarate = np.mean(mean_datarates)
+        mean_aosis = self.monitor.kpi_results["total aosi"]
+        mean_aosi = mean_aosis[-1]
+        total_mean_aosi = np.mean(mean_aosis)
 
         # remove simulation axis's ticks and spines
         ax.get_xaxis().set_visible(False)
@@ -1028,10 +1007,10 @@ class MComCore(gymnasium.Env):
         ax.spines["left"].set_visible(False)
 
         rows = ["Current", "History"]
-        cols = ["Avg. DR [MB/s]", "Avg. Utility"]
+        cols = ["AoRI", "AoSI"]
         text = [
-            [f"{mean_datarate:.3f}", f"{mean_utility:.3f}"],
-            [f"{total_mean_datarate:.3}", f"{total_mean_utility:.3f}"],
+            [f"{mean_aori:.2f}", f"{mean_aosi:.2f}"],
+            [f"{total_mean_aori:.2f}", f"{total_mean_aosi:.2f}"],
         ]
 
         table = ax.table(
@@ -1052,7 +1031,7 @@ class MComCore(gymnasium.Env):
         ax.plot(time, bw_ue, linewidth=1, color="black")
 
         ax.set_xlabel("Time")
-        ax.set_ylabel("BW Alloc UE")
+        ax.set_ylabel("BW Alloc. UE")
         ax.set_xlim([0.0, self.EP_MAX_TIME])
         ax.set_ylim([0.0, 1.0])
 
@@ -1062,7 +1041,7 @@ class MComCore(gymnasium.Env):
         ax.plot(time, comp_ue, linewidth=1, color="black")
 
         ax.set_xlabel("Time")
-        ax.set_ylabel("Comp Alloc Sensor")
+        ax.set_ylabel("Comp. Alloc. Sensor")
         ax.set_xlim([0.0, self.EP_MAX_TIME])
         ax.set_ylim([0.0, 1.0])
 

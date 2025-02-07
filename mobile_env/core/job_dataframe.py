@@ -37,7 +37,7 @@ class JobDataFrame:
             'is_accomplished': True,
             'creation_time': job['creation_time'],
             'arrival_time': job['transfer_time_end'],
-            'accomplished_time': self.env.time,
+            'accomplished_time': job['processing_time_end'],
             'e2e_delay_threshold': self.config[E2E_THRESHOLD],
             'e2e_delay': job['total_accomplishment_time'],
             'synch_delay': None
@@ -76,6 +76,6 @@ class JobDataFrame:
     def log_sensor_packets(self) -> None:
         self.log_dataframe(self.df_sensor_packets, SENSOR)
         
-    def reset_packet_dataframes(self) -> None:
+    def reset_dataframes(self) -> None:
         self.df_ue_packets = pd.DataFrame(columns=self.df_ue_packets.columns)
         self.df_sensor_packets = pd.DataFrame(columns=self.df_sensor_packets.columns)

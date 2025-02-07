@@ -28,7 +28,7 @@ def mean_datarate_sensor(sim):
 
 def mean_utility(sim):
     """Calculates the average utility of UEs."""
-    if not sim.utilities_sensor:
+    if not sim.utilities:
         return sim.utility.lower
 
     return np.mean(list(sim.utilities.values()))
@@ -36,7 +36,7 @@ def mean_utility(sim):
 def mean_utility_sensor(sim):
     """Calculates the average utility of sensors."""
     if not sim.utilities_sensor:
-        return sim.utility.lower
+        return sim.utilities_sensor.lower
 
     return np.mean(list(sim.utilities_sensor.values()))
 
@@ -101,15 +101,19 @@ def get_datarate_sensor(sim):
 
 
 def bandwidth_allocation_ue(sim):
+    """Get the bandwidth allocation for UEs at the current timestep."""
     return round(sim.resource_allocations["bandwidth_ue"][-1], 2)
     
 def bandwidth_allocation_sensor(sim): 
+    """Get the bandwidth allocation for sensors at the current timestep."""
     return round(sim.resource_allocations["bandwidth_sensor"][-1], 2)
 
 def computational_allocation_ue(sim):
+    """Get the computational allocation for UEs at the current timestep."""
     return round(sim.resource_allocations["comp_power_ue"][-1], 2)
 
 def computational_allocation_sensor(sim):
+    """Get the computational allocation for sensors at the current timestep."""
     return round(sim.resource_allocations["comp_power_sensor"][-1], 2)
 
 
@@ -234,17 +238,16 @@ def compute_aori(sim) -> Dict:
     ].copy()
 
     if not accomplished_packets.empty:
+        # Group accomplished packets by device ID, sum the e2e delay for each device, convert to dictionary
         aori_logs_per_user = (accomplished_packets.groupby('device_id')['e2e_delay'].sum().to_dict())
         for ue_id, aori in aori_logs_per_user.items():
             aori_logs[ue_id] = aori
-    
-    #sim.logger.log_reward(f"Time step: {sim.time} AoRI logs: {aori_logs}")
 
     return aori_logs
     
 def compute_aosi(sim) -> Dict:
     """Compute AoSI for all accomplished UE packets at the current timestep."""
-    # TODO: is using the absolute delay best way to xompute the aosi
+    # TODO: is using the absolute delay best way to compute the aosi
     # TODO: is sum the best aggregation way? -> can we use max or mean?
     aosi_logs = {ue.ue_id: None for ue in sim.users.values()}
 
@@ -265,8 +268,6 @@ def compute_aosi(sim) -> Dict:
         accomplished_ue_packets['aosi'] = abs(accomplished_ue_packets['creation_time'] - sensor_creation_time)
 
         aosi_logs = accomplished_ue_packets.groupby('device_id')['aosi'].sum().to_dict()
-
-    #sim.logger.log_reward(f"Time step: {sim.time} AoSI Logs: {aosi_logs}")
 
     return aosi_logs
 

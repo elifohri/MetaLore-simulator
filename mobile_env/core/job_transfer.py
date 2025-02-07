@@ -10,7 +10,7 @@ Job = Dict[str, Optional[Union[float, int]]]
 
 class JobTransferManager:
     """
-    Manages the uplink transfer of jobs from devices (UserEquipment and Sensors) to base stations
+    Manages the uplink transfer of jobs from devices (UserEquipment and Sensors) to base stations using available bandwidth
     within the simulation environment.
     """
 
@@ -70,8 +70,8 @@ class JobTransferManager:
         dst_buffer = dst.transferred_jobs_ue if isinstance(src, UserEquipment) else dst.transferred_jobs_sensor
         return src_buffer, dst_buffer
     
-    def _update_job_request_size(self, job: Dict[str, Union[int, float]], bits_to_send: float) -> None:
-        job['remaining_request_size'] -= bits_to_send
+    def _update_job_request_size(self, job: Dict[str, Union[int, float]], bits_sent: float) -> None:
+        job['remaining_request_size'] -= bits_sent
         if job['remaining_request_size'] < 0:
             job['remaining_request_size'] = 0
     
@@ -80,17 +80,17 @@ class JobTransferManager:
         job['total_transfer_time'] = job['transfer_time_end'] - job['transfer_time_start']
         job['device_queue_waiting_time'] = job['transfer_time_end'] - job['creation_time']
 
-    def _update_transferred_data(self, src: Device, bits_to_send: float) -> None:
+    def _update_transferred_data(self, src: Device, bits_sent: float) -> None:
         if isinstance(src, UserEquipment):
-            self.throughput_ue[src.ue_id] += bits_to_send
+            self.throughput_ue[src.ue_id] += bits_sent
         elif isinstance(src, Sensor):
-            self.throughput_sensor[src.sensor_id] += bits_to_send
+            self.throughput_sensor[src.sensor_id] += bits_sent
 
-    def log_transferred_job(self, src: Device, dst: BaseStation, job: Job, bits_to_send: float, full_transfer: bool) -> None:
+    def log_transferred_job(self, src: Device, dst: BaseStation, job: Job, bits_sent: float, full_transfer: bool) -> None:
             if full_transfer:
                 self.logger.log_simulation(f"Time step: {self.env.time} Job: {job['packet_id']} fully transferred from {src} to {dst}.")
             else:
-                self.logger.log_simulation(f"Time step: {self.env.time} Job: {job['packet_id']} partially transferred from {src} to {dst}, bits send {bits_to_send:.3f}.")
+                self.logger.log_simulation(f"Time step: {self.env.time} Job: {job['packet_id']} partially transferred from {src} to {dst}, bits send {bits_sent:.3f}.")
             
     def log_job_details(self, job: Job) -> None:
         self.logger.log_simulation(
