@@ -5,17 +5,19 @@ import pandas as pd
 
 class Monitor:
     def __init__(
-        self, scalar_metrics: Dict, kpi_metrics: Dict, ue_metrics: Dict, bs_metrics: Dict, ss_metrics: Dict, **kwargs
+        self, scalar_metrics: Dict, performance_metrics: Dict, system_metrics: Dict, ue_metrics: Dict, bs_metrics: Dict, ss_metrics: Dict, **kwargs
     ):
 
         self.scalar_metrics: Dict = scalar_metrics
-        self.kpi_metrics: Dict = kpi_metrics
+        self.performance_metrics: Dict = performance_metrics
+        self.system_metrics: Dict = system_metrics
         self.ue_metrics: Dict = ue_metrics
         self.bs_metrics: Dict = bs_metrics
         self.ss_metrics: Dict = ss_metrics
 
         self.scalar_results: Dict = None
-        self.kpi_results: Dict = None
+        self.performance_results: Dict = None
+        self.system_results: Dict = None
         self.ue_results: Dict = None
         self.bs_results: Dict = None
         self.ss_results: Dict = None
@@ -24,7 +26,8 @@ class Monitor:
         """Reset tracked results for all metrics."""
 
         self.scalar_results = {name: [] for name in self.scalar_metrics}
-        self.kpi_results = {name: [] for name in self.kpi_metrics}
+        self.performance_results = {name: [] for name in self.performance_metrics}
+        self.system_results = {name: [] for name in self.system_metrics}
         self.ue_results = {name: [] for name in self.ue_metrics}
         self.bs_results = {name: [] for name in self.bs_metrics}
         self.ss_results = {name: [] for name in self.ss_metrics}
@@ -36,8 +39,11 @@ class Monitor:
         scalar_updates = {
             name: metric(simulation) for name, metric in self.scalar_metrics.items()
         }
-        kpi_updates = {
-            name: metric(simulation) for name, metric in self.kpi_metrics.items()
+        performance_updates = {
+            name: metric(simulation) for name, metric in self.performance_metrics.items()
+        }
+        system_updates = {
+            name: metric(simulation) for name, metric in self.system_metrics.items()
         }
         ue_updates = {
             name: metric(simulation) for name, metric in self.ue_metrics.items()
@@ -54,9 +60,13 @@ class Monitor:
             name: self.scalar_results[name] + [scalar_updates[name]]
             for name in self.scalar_metrics
         }
-        self.kpi_results = {
-            name: self.kpi_results[name] + [kpi_updates[name]]
-            for name in self.kpi_metrics
+        self.performance_results = {
+            name: self.performance_results[name] + [performance_updates[name]]
+            for name in self.performance_metrics
+        }
+        self.system_results = {
+            name: self.system_results[name] + [system_updates[name]] 
+            for name in self.system_metrics
         }
         self.ue_results = {
             name: self.ue_results[name] + [ue_updates[name]] for name in self.ue_metrics
@@ -75,9 +85,13 @@ class Monitor:
         scalar_results = pd.DataFrame(self.scalar_results)
         scalar_results.index.names = ["Time Step"]
 
-        # Load kpi results with index (metric; time)
-        kpi_results = pd.DataFrame(self.kpi_results)
-        kpi_results.index.names = ["Time Step"]
+        # Load performance results with index (metric; time)
+        performance_results = pd.DataFrame(self.performance_results)
+        performance_results.index.names = ["Time Step"]
+
+        # Load system results with index (metric; time)
+        system_results = pd.DataFrame(self.system_results)
+        system_results.index.names = ["Time Step"]
 
         # Load UE results with index (metric, UE ID; time)
         ue_results = {
@@ -130,7 +144,7 @@ class Monitor:
         ss_results = ss_results.reorder_levels(["Time Step", "Sensor ID", "Metric"])
         ss_results = ss_results.unstack()
 
-        return scalar_results, kpi_results, ue_results, bs_results, ss_results
+        return scalar_results, performance_results, system_results, ue_results, bs_results, ss_results
 
     def info(self):
         """Outputs the latest results as a dictionary."""
@@ -139,14 +153,19 @@ class Monitor:
         if any(len(results) == 0 for results in self.scalar_results.values()):
             return {}
         
-        # Return empty infos if there are no important results.
-        if any(len(results) == 0 for results in self.kpi_results.values()):
+        # Return empty infos if there are no performance results.
+        if any(len(results) == 0 for results in self.performance_results.values()):
+            return {}
+        
+        # Return empty infos if there are no system results.
+        if any(len(results) == 0 for results in self.system_results.values()):
             return {}
 
         scalar_info = {name: values[-1] for name, values in self.scalar_results.items()}
-        kpi_info = {name: values[-1] for name, values in self.kpi_results.items()}
+        performance_info = {name: values[-1] for name, values in self.performance_results.items()}
+        system_info = {name: values[-1] for name, values in self.system_results.items()}
         ue_info = {name: values[-1] for name, values in self.ue_results.items()}
         bs_info = {name: values[-1] for name, values in self.bs_results.items()}
         ss_info = {name: values[-1] for name, values in self.ss_results.items()}
 
-        return {**scalar_info, **kpi_info, **ue_info, **bs_info, **ss_info}
+        return {**scalar_info, **performance_info, **system_info, **ue_info, **bs_info, **ss_info}

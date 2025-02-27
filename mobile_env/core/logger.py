@@ -64,9 +64,9 @@ class LoggerManager:
     def log_datarates(self, env) -> None:
         # Log data transfer rates for all connections.
         for (bs, ue), rate in sorted(self.env.datarates.items(), key=lambda x: x[0][1].ue_id):
-            self.log_simulation(f"Time step: {env.time} Data rate for {ue} -> {bs} -> {rate:.3f} MB/s")
+            self.log_simulation(f"Time step: {env.time} Data rate for {ue} -> {bs} -> {rate:.3f} Mbps")
         for (bs, sensor), rate in sorted(self.env.datarates_sensor.items(), key=lambda x: x[0][1].sensor_id):
-            self.log_simulation(f"Time step: {env.time} Data rate for {sensor} -> {bs} -> {rate:.3f} MB/s")
+            self.log_simulation(f"Time step: {env.time} Data rate for {sensor} -> {bs} -> {rate:.3f} Mbps")
 
     def log_job_queues(self, env) -> None:
         # Log jobs across all queues.

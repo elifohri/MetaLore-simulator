@@ -19,12 +19,12 @@ class JobDataFrame:
 
         # Main DataFrames to store all packets for reward computation
         self.df_ue_packets = pd.DataFrame(columns=[
-            'packet_id', 'device_type', 'device_id', 'is_transferred', 'is_accomplished', 
-            'creation_time', 'arrival_time', 'accomplished_time', 'e2e_delay_threshold', 'e2e_delay', 'synch_delay'
+            'packet_id', 'device_type', 'device_id', 'is_transferred', 'is_accomplished', 'creation_time', 
+            'arrival_time', 'accomplished_time', 'e2e_delay_threshold', 'e2e_delay', 'synch_delay', 'synch_reward'
         ])
         self.df_sensor_packets = pd.DataFrame(columns=[
-            'packet_id', 'device_type', 'device_id', 'is_transferred', 'is_accomplished', 
-            'creation_time', 'arrival_time', 'accomplished_time', 'e2e_delay_threshold', 'e2e_delay', 'synch_delay'
+            'packet_id', 'device_type', 'device_id', 'is_transferred', 'is_accomplished', 'creation_time', 
+            'arrival_time', 'accomplished_time', 'e2e_delay_threshold', 'e2e_delay', 'synch_delay', 'synch_reward'
         ])
 
     def update_after_processing(self, job: Job) -> None:
@@ -40,7 +40,8 @@ class JobDataFrame:
             'accomplished_time': job['processing_time_end'],
             'e2e_delay_threshold': self.config[E2E_THRESHOLD],
             'e2e_delay': job['total_accomplishment_time'],
-            'synch_delay': None
+            'synch_delay': None,
+            'synch_reward': None
         }
  
         # Ensure the df_ue_packets is not None or empty before concatenation

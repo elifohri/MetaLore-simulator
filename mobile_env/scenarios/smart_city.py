@@ -3,7 +3,7 @@ from mobile_env.core.entities import BaseStation, UserEquipment, Sensor
 from mobile_env.core.util import deep_dict_merge
 import random
 
-NUM_SENSOR = 20
+NUM_SENSOR = 10
 NUM_UE = 5
 MAX_DISTANCE = 100         # Maximum distance from any base station
 MIN_DISTANCE = 2           # Minimum distance between sensors and between sensors and base stations

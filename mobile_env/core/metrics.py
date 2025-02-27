@@ -144,24 +144,50 @@ def get_sensor_data_queues(sim) -> Dict[int, int]:
 
 def get_traffic_request_ue(sim):
     """Get the traffic request from all UEs at the current timestep."""
-    traffic_requests_ue = {ue.ue_id: ue.total_traffic_request for ue in sim.users.values()}
-    return traffic_requests_ue
+    if sim.traffic_requests_per_device is None:
+        return {ue.ue_id: 0.0 for ue in sim.users.values()}
+    return sim.traffic_requests_per_device
 
 def get_traffic_request_sensor(sim):
     """Get the traffic request from all sensors at the current timestep."""
-    traffic_requests_sensor = {sensor.sensor_id: sensor.total_traffic_request for sensor in sim.sensors.values()}
-    return traffic_requests_sensor
+    if sim.traffic_requests_per_sensor is None:
+        return {sensor.sensor_id: 0.0 for sensor in sim.sensors.values()}
+    return sim.traffic_requests_per_sensor
 
 
 def get_total_traffic_request_ue(sim):
     """Get the total traffic request from all UEs at the current timestep."""
-    total_traffic_requests_ue = sum(ue.total_traffic_request for ue in sim.users.values())
-    return total_traffic_requests_ue
+    traffic_requests = get_traffic_request_ue(sim)
+    return sum(traffic_requests.values())
 
 def get_total_traffic_request_sensor(sim):
     """Get the total traffic request from all sensors at the current timestep."""
-    total_traffic_requests_sensor = sum(sensor.total_traffic_request for sensor in sim.sensors.values())
-    return total_traffic_requests_sensor
+    traffic_requests = get_traffic_request_sensor(sim)
+    return sum(traffic_requests.values())
+
+
+def get_computation_request_ue(sim):
+    """Get the computation request from all UEs at the current timestep."""
+    if sim.computation_requests_per_device is None:
+        return {ue.ue_id: 0.0 for ue in sim.users.values()}
+    return sim.computation_requests_per_device
+
+def get_computation_request_sensor(sim):
+    """Get the computation request from all sensors at the current timestep."""
+    if sim.computation_requests_per_sensor is None:
+        return {sensor.sensor_id: 0.0 for sensor in sim.sensors.values()}
+    return sim.computation_requests_per_sensor
+
+
+def get_total_computation_request_ue(sim):
+    """Get the total computation request from all UEs at the current timestep."""
+    computation_requests = get_computation_request_ue(sim)
+    return sum(computation_requests.values())
+
+def get_total_computation_request_sensor(sim):
+    """Get the total computation request from all sensors at the current timestep."""
+    computation_requests = get_computation_request_sensor(sim)
+    return sum(computation_requests.values())
 
 
 def calculate_throughput_ue(sim):
@@ -227,66 +253,30 @@ def delayed_sensor_packets(sim):
     return delayed_sensor_packets 
 
 
-def compute_aori(sim) -> Dict:
-    """Compute AoRI (Age of Request Information) for all accomplished packets at the current timestep."""
-    # TODO: handling missing data -> what can we put if there is no accomplished packets? None?
-    # TODO: is sum the best aggregation way? -> can we use max or mean?
-    aori_logs = {ue.ue_id: None for ue in sim.users.values()}
+def get_aori(sim) -> Dict:
+    """Get AoRI (Age of Request Information) for all accomplished packets at the current timestep."""
+    return sim.aori_per_device
 
-    accomplished_packets = sim.job_dataframe.df_ue_packets[
-        (sim.job_dataframe.df_ue_packets['accomplished_time'] == sim.time)
-    ].copy()
-
-    if not accomplished_packets.empty:
-        # Group accomplished packets by device ID, sum the e2e delay for each device, convert to dictionary
-        aori_logs_per_user = (accomplished_packets.groupby('device_id')['e2e_delay'].sum().to_dict())
-        for ue_id, aori in aori_logs_per_user.items():
-            aori_logs[ue_id] = aori
-
-    return aori_logs
-    
-def compute_aosi(sim) -> Dict:
-    """Compute AoSI for all accomplished UE packets at the current timestep."""
-    # TODO: is using the absolute delay best way to compute the aosi
-    # TODO: is sum the best aggregation way? -> can we use max or mean?
-    aosi_logs = {ue.ue_id: None for ue in sim.users.values()}
-
-    accomplished_ue_packets = sim.job_dataframe.df_ue_packets[
-        sim.job_dataframe.df_ue_packets['accomplished_time'] == sim.time
-    ].copy()
-
-    accomplished_sensor_packets = sim.job_dataframe.df_sensor_packets[
-        sim.job_dataframe.df_sensor_packets['is_accomplished']
-    ].copy()
-
-    if not accomplished_ue_packets.empty and not accomplished_sensor_packets.empty:
-        latest_accomplished_time = accomplished_sensor_packets['accomplished_time'].max()
-        latest_sensor_packets = accomplished_sensor_packets[accomplished_sensor_packets['accomplished_time'] == latest_accomplished_time]
-        latest_sensor_packet = latest_sensor_packets.loc[latest_sensor_packets['creation_time'].idxmax()]
-
-        sensor_creation_time = latest_sensor_packet['creation_time']
-        accomplished_ue_packets['aosi'] = abs(accomplished_ue_packets['creation_time'] - sensor_creation_time)
-
-        aosi_logs = accomplished_ue_packets.groupby('device_id')['aosi'].sum().to_dict()
-
-    return aosi_logs
+def get_aosi(sim) -> Dict:
+    """Get AoSI (Age of Request Information) for all accomplished UE packets."""
+    return sim.aosi_per_device
 
 
 def calculate_total_aori(sim):
     """Calculate the total throughput for all UEs in the environment."""
-    aori = compute_aori(sim)
+    aori = get_aori(sim)
     total_aori = sum(value for value in aori.values() if value is not None)
     return total_aori
 
 def calculate_total_aosi(sim):
     """Calculate the total throughput for all UEs and sensor information in the environment."""
-    aosi = compute_aosi(sim)
+    aosi = get_aosi(sim)
     total_aosi = sum(value for value in aosi.values() if value is not None)
     return total_aosi
 
 
 def get_reward(sim):
-    return round(sim.reward, 2)
+    return round(sim.timestep_reward, 2)
 
 def get_episode_reward(sim):
-    return round(sim.cumulative_reward, 2)
+    return round(sim.episode_reward, 2)

@@ -2,7 +2,7 @@ import logging
 import numpy as np
 from typing import Dict, Optional, Union
 from mobile_env.core.entities import UserEquipment, Sensor
-from mobile_env.core.constants import SENSOR, USER_DEVICE, UE_JOB, SENSOR_JOB, COMM_LAMBDA, COMP_LAMBDA, PROBABILITY, INITIAL_REQUEST_SIZE
+from mobile_env.core.constants import SENSOR, USER_DEVICE, UE_JOB, SENSOR_JOB, COMM_LAMBDA, COMP_LAMBDA, PROBABILITY, INITIAL_REQUEST_SIZE, COMPUTATION_REQUEST
 
 
 Device = Union[UserEquipment, Sensor]
@@ -55,16 +55,18 @@ class JobGenerationManager:
         return job
     
     def generate_job_ue(self, ue: UserEquipment) -> None:
-        if  np.random.rand() < self.config[UE_JOB][PROBABILITY]:
+        if np.random.rand() < self.config[UE_JOB][PROBABILITY]:
             job = self._generate_job(self.env.time, ue.ue_id, USER_DEVICE, UE_JOB)
             ue.data_buffer_uplink.enqueue_job(job)
             ue.update_traffic_requests(traffic_request=job[INITIAL_REQUEST_SIZE])
+            ue.update_computation_requests(computation_request=job[COMPUTATION_REQUEST])
             #self.log_generated_job(job)
 
     def generate_job_sensor(self, sensor: Sensor) -> None:
         job = self._generate_job(self.env.time, sensor.sensor_id, SENSOR, SENSOR_JOB)
         sensor.data_buffer_uplink.enqueue_job(job)
         sensor.update_traffic_requests(traffic_request=job[INITIAL_REQUEST_SIZE])
+        sensor.update_computation_requests(computation_request=job[COMPUTATION_REQUEST])
         #self.log_generated_job(job)
             
     def log_generated_job(self, job: Job) -> None:

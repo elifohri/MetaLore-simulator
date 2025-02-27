@@ -23,8 +23,9 @@ class Channel:
 
     def snr(self, bs: BaseStation, device: Device):
         """Calculate SNR for transmission between BS and a device (UE or sensor)."""
-        loss = self.power_loss(bs, device)
-        power = 10 ** ((bs.tx_power - loss) / 10)
+        loss = self.power_loss(bs, device)              # Received power in dBm
+        power = 10 ** ((bs.tx_power - loss) / 10)       # Convert dBm to Watts
+
         return power / device.noise
 
     def isoline(
@@ -82,7 +83,7 @@ class Channel:
     def data_rate(cls, device: Device, bandwidth: float, snr: float):
         """Calculate max. data rate for transmission between BS and a device (UE or sensor) according to the bandwidth allocated."""
         if snr > device.snr_threshold or bandwidth != 0:
-            return bandwidth * np.log2(1 + snr)
+            return (bandwidth * np.log2(1 + snr)) / 1000000     # convert to Mbps
 
         return 0.0
     
@@ -135,7 +136,7 @@ class Channel:
 
 class OkumuraHata(Channel):
     def power_loss(self, bs: BaseStation, device: Device):
-        distance = bs.point.distance(device.point)
+        distance = bs.point.distance(device.point) / 1000       # in km
 
         ch = (
             0.8

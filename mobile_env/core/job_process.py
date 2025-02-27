@@ -36,8 +36,9 @@ class JobProcessManager:
                 self._update_job_timing(job)
                 accomplished_jobs_queue.enqueue_job(job)
                 self.data_frame.update_after_processing(job)
-                #self.log_processed_job(job)
+                self._update_device_computational_request(job)
                 computational_power -= job['computation_request']
+                #self.log_processed_job(job)
 
                 if computational_power <= 0:
                     #self.logger.log_simulation(f"Time step: {self.env.time} MEC server computational power exhausted.")
@@ -52,6 +53,10 @@ class JobProcessManager:
         job['total_processing_time'] = job['processing_time_end'] - job['processing_time_start']
         job['total_accomplishment_time'] = job['processing_time_end'] - job['creation_time']
         job['bs_queue_waiting_time'] = job['processing_time_start'] - job['transfer_time_end']
+
+    def _update_device_computational_request(self, job: Job) -> None:
+        device = (self.env.users[job['device_id']] if job['device_type'] == 'user_device' else self.env.sensors[job['device_id']])
+        device.total_computation_request -= job['computation_request']
 
     def log_processed_job(self, job: Job) -> None:
         self.logger.log_simulation(
