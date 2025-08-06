@@ -1,5 +1,9 @@
 # MetaLore: Learning to Orchestrate the Metaverse
 
+![Python](https://img.shields.io/badge/python-3.10+-blue)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![Status](https://img.shields.io/badge/status-in--development-yellow)
+
 **MetaLore** is a simulation environment for exploring dynamic resource allocation in **smart city** and **metaverse**-inspired systems. It models the interaction between mobile users, sensors, base stations, and edge servers in a **sub-metaverse**, where efficient orchestration of limited communication and computational resources is critical for real-time synchronization between the physical and digital worlds.
 
 Built upon the [`mobile-env`](https://github.com/stefanbschneider/mobile-env) framework, MetaLore extends its capabilities to support **deep reinforcement learning (DRL)**-based control and **Age of Information (AoI)**-aware optimization.
@@ -9,7 +13,7 @@ Built upon the [`mobile-env`](https://github.com/stefanbschneider/mobile-env) fr
 - **Joint Resource Allocation**  
   Dynamically splits both communication bandwidth and computational resources between mobile user equipment (UEs) and stationary environmental sensors.
 
-- ⏱**Custom AoI Metrics**  
+- **Custom AoI Metrics**  
   Integrates novel delay-aware metrics:  
   - **AoRI** (Age of Request Information) — measures end-to-end service latency.  
   - **AoSI** (Age of Sensor Information) — captures data freshness from sensors.
@@ -43,7 +47,7 @@ After cloning, install in "editable" mode (-e):
 pip install -e .
 ```
 
-This is equivalent to running `pip install -r requirements.txt`.
+This is functionally equivalent to installing the dependencies from `requirements.txt`.
 
 ## Example Usage
 
@@ -64,7 +68,7 @@ while not done:
 
 ## Documentation and API
 
-Coming soon!
+Full API documentation and usage examples are under development and will be released soon.
 
 ## Contributing
 
@@ -83,7 +87,7 @@ If you use `MetaLore` simulator in your work, please cite our paper: coming soon
 2. Create a Feature Branch: Work on your changes in a dedicated feature branch to keep development organized.
 3. Submit a Pull Request (PR): Once your changes are ready, submit a PR describing the enhancement, fix or addition.
 
-Well-documented and tested contributions are valued that align with the project's goals and coding standards.
+We value well-documented and tested contributions that align with the project's goals and coding standards.
 
 ### Feature Your Project
 
@@ -99,6 +103,10 @@ If you'd like to reference the original work, please see their [paper in PDF](ht
 For more information on mobile-env, visit their [GitHub repository](https://github.com/stefanbschneider/mobile-env).
 
 For questions or further information, please feel free to contact elif-ebru.ohri@lip6.fr or open an issue on this repository.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
 
 ## References
 * S. Schneider, S. Werner, R. Khalili, A. Hecker, and H. Karl, “mobile-env: An open platform for reinforcement learning in wireless mobile networks,” in Network Operations and Management Symposium (NOMS). IEEE/IFIP, 2022.
