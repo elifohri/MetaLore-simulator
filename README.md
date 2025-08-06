@@ -4,7 +4,7 @@
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-in--development-yellow)
 
-**MetaLore** is a simulation environment for exploring dynamic resource allocation in **smart city** and **metaverse**-inspired systems. It models the interaction between mobile users, sensors, base stations, and edge servers in a **sub-metaverse**, where efficient orchestration of limited communication and computational resources is critical for real-time synchronization between the physical and digital worlds.
+**MetaLore** is a simulation environment for exploring dynamic resource allocation in **smart city** and **metaverse**-applications. It models the interaction between mobile users, sensors, base stations and edge servers in a **sub-metaverse**, where efficient orchestration of limited communication and computational resources is critical for real-time synchronization between the physical and digital worlds.
 
 Built upon the [`mobile-env`](https://github.com/stefanbschneider/mobile-env) framework, MetaLore extends its capabilities to support **deep reinforcement learning (DRL)**-based control and **Age of Information (AoI)**-aware optimization.
 
@@ -29,7 +29,7 @@ Built upon the [`mobile-env`](https://github.com/stefanbschneider/mobile-env) fr
 
 ## Research Context
 
-MetaLore was developed as part of an ongoing **PhD research project** focused on **real-time synchronization and orchestration in smart city environments**. Using reinforcement learning, the system learns to adaptively manage heterogeneous traffic demands and maintain digital twin fidelity in dynamic network conditions.
+MetaLore was developed as part of an ongoing **PhD research project** focused on **real-time synchronization and orchestration in smart city environments**. Using reinforcement learning, the system learns to adaptively manage heterogeneous traffic demands and maintain digital twin synchronization in dynamic network conditions.
 
 <center>
   <img src="Metalore_SS.png" alt="Description" width="400">
