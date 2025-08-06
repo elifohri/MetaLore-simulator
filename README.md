@@ -4,8 +4,6 @@
 
 Built upon the [`mobile-env`](https://github.com/stefanbschneider/mobile-env) framework, MetaLore extends its capabilities to support **deep reinforcement learning (DRL)**-based control and **Age of Information (AoI)**-aware optimization.
 
----
-
 ## Key Features
 
 - **Joint Resource Allocation**  
@@ -25,9 +23,7 @@ Built upon the [`mobile-env`](https://github.com/stefanbschneider/mobile-env) fr
 - **Visualizations & Evaluation Tools**  
   Built-in tools for monitoring queue dynamics, AoI metrics and policy performance.
 
----
-
-## 🎓 Research Context
+## Research Context
 
 MetaLore was developed as part of an ongoing **PhD research project** focused on **real-time synchronization and orchestration in smart city environments**. Using reinforcement learning, the system learns to adaptively manage heterogeneous traffic demands and maintain digital twin fidelity in dynamic network conditions.
 
@@ -74,7 +70,6 @@ Coming soon!
 
 ### Development Team: 
 - [@elifohri](https://github.com/elifohri)
-- [@bazziamir24](https://github.com/bazziamir24)
 
 We welcome any contributions to the MetaLore Simulator. It can be adding new features, refining existing functionalities, resolving bugs or improving documentation.
 
