@@ -12,6 +12,7 @@ import pygame
 from matplotlib import cm
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from pygame import Surface
+import random
 
 from mobile_env.core import metrics
 from mobile_env.core.arrival import NoDeparture
@@ -22,6 +23,7 @@ from mobile_env.core.movement import RandomWaypointMovement
 from mobile_env.core.schedules import ResourceFair, RoundRobin
 from mobile_env.core.util import BS_SYMBOL, SENSOR_SYMBOL, deep_dict_merge
 from mobile_env.core.utilities import BoundedLogUtility
+from mobile_env.core.sensor_placement import SensorPlacement
 from mobile_env.core.job_manager import JobGenerationManager
 from mobile_env.core.job_transfer import JobTransferManager
 from mobile_env.core.job_process import JobProcessManager
@@ -55,6 +57,7 @@ class MComCore(gymnasium.Env):
         self.scheduler = config["scheduler"](**config["scheduler_params"])
         self.movement = config["movement"](**config["movement_params"])
         self.utility = config["utility"](**config["utility_params"])
+        self.sensor_placement = config["sensor_placement"](**config["sensor_placement_params"])
 
         # define parameters that track the simulation's progress
         self.EP_MAX_TIME = config["EP_MAX_TIME"]
@@ -71,7 +74,7 @@ class MComCore(gymnasium.Env):
 
         # define sizes of base feature set that can or cannot be observed
         self.feature_sizes = {
-            "queue_lengths": 4
+            "queue_lengths": 2
         }
 
         # set object that handles calls to action(), reward() & observation()
@@ -94,18 +97,14 @@ class MComCore(gymnasium.Env):
         self.datarates_sensor: Dict[Tuple[BaseStation, Sensor], float] = None
         # store resource allocations for each base station
         self.resource_allocations: Dict[str, List[float]] = None
-        # store aori for each device
-        self.aori_per_device: Dict[UserEquipment, float] = None
-        # store aosi for each device
-        self.aosi_per_device: Dict[Sensor, float] = None
         # store traffic requests for each device
-        self.traffic_requests_per_device: Dict[UserEquipment, float] = None
+        self.traffic_request_per_ue: Dict[UserEquipment, float] = None
         # store traffic requests for each sensor
-        self.traffic_requests_per_sensor: Dict[Sensor, float] = None
+        self.traffic_request_per_sensor: Dict[Sensor, float] = None
         # store computation requests for each device
-        self.computation_requests_per_device: Dict[UserEquipment, float] = None
+        self.computation_request_per_ue: Dict[UserEquipment, float] = None
         # store computation requests for each sensor
-        self.computation_requests_per_sensor: Dict[Sensor, float] = None
+        self.computation_request_per_sensor: Dict[Sensor, float] = None
         # stores each UE's (scaled) utility
         self.utilities: Dict[UserEquipment, float] = None
         # stores each Sensor's (scaled) utility
@@ -124,12 +123,33 @@ class MComCore(gymnasium.Env):
 
         # Instantiate JobGenerator, JobTransferManager and JobProcessManager classes
         self.job_generator = JobGenerationManager(self)
-        self.job_transfer_manager = JobTransferManager(self)
+        self.job_transfer_manager = JobTransferManager(self, self.job_dataframe)
         self.job_process_manager = JobProcessManager(self, self.job_dataframe)
 
         # Inititalize rewards
-        self.timestep_reward = 0
-        self.episode_reward = 0
+        self.timestep_reward = 0.0
+        self.episode_reward = 0.0
+
+        # Performance metrics
+        self.total_episode_transmission_throughput_ue = 0.0
+        self.total_episode_transmission_throughput_sensor = 0.0
+        self.total_episode_processed_data_ue = 0.0
+        self.total_episode_processed_data_sensor = 0.0
+
+        self.avg_e2e_delay = 0.0
+        self.avg_synch_delay = 0.0
+
+        self.processed_throughput_ue = 0.0
+        self.processed_throughput_sensor = 0.0
+        self.total_episode_processed_throughput_ue = 0.0
+        self.total_episode_processed_throughput_sensor = 0.0
+
+        self.total_episode_ue_packets_generated = 0.0
+        self.total_episode_sensor_packets_generated = 0.0
+        self.total_episode_ue_packets_delayed = 0.0
+        self.total_episode_sensor_packets_delayed = 0.0
+        self.total_episode_ue_packets_served = 0.0
+        self.total_episode_sensor_packets_served = 0.0
 
         # parameters for pygame visualization
         self.window = None
@@ -142,8 +162,6 @@ class MComCore(gymnasium.Env):
             {
                 "number UE connections": metrics.number_connections,
                 "number sensor conncections": metrics.number_connections_sensor,
-                "delayed UE packet count": metrics.delayed_ue_packets,
-                "delayed sensor packet count": metrics.delayed_sensor_packets,
                 "mean utility": metrics.mean_utility,
                 "mean utility sensor": metrics.mean_utility_sensor,
                 "mean datarate": metrics.mean_datarate,
@@ -157,11 +175,26 @@ class MComCore(gymnasium.Env):
                 "bw allocation sensor": metrics.bandwidth_allocation_sensor,
                 "comp. allocation UE": metrics.computational_allocation_ue,
                 "comp. allocation sensor": metrics.computational_allocation_sensor,    
-                "total delayed packets": metrics.delayed_ue_packets,         
-                "reward": metrics.get_reward,
-                "reward cumulative": metrics.get_episode_reward,   
-                "total aori":metrics.calculate_total_aori,
-                "total aosi": metrics.calculate_total_aosi,
+
+                "cumulative transmission throughput ue": metrics.get_cumulative_transmission_throughput_ue,
+                "cumulative transmission throughput sensor": metrics.get_cumulative_transmission_throughput_sensor,
+                "cumulative processed data ue": metrics.get_cumulative_processed_data_ue,
+                "cumulative processed data sensor": metrics.get_cumulative_processed_data_sensor,
+
+                "cumulative generated UE jobs": metrics.get_cumulative_ue_packets_generated,
+                "cumulative generated sensor jobs": metrics.get_cumulative_sensor_packets_generated,
+                "cumulative delayed UE jobs": metrics.get_cumulative_ue_packets_delayed,
+                "cumulative delayed sensor jobs": metrics.get_cumulative_sensor_packets_delayed,
+                "cumulative served UE jobs": metrics.get_cumulative_ue_packets_served,
+                "cumulative served sensor jobs": metrics.get_cumulative_sensor_packets_served,
+
+                "average e2e delay": metrics.get_e2e_delay,
+                "average synch delay": metrics.get_synchronization_delay,
+                "total episode processed throughput ue": metrics.get_cumulative_processed_throughput_ue,
+                "total episode processed throughput sensor": metrics.get_cumulative_processed_throughput_sensor,
+
+                "timestep reward": metrics.get_reward,
+                "episode reward": metrics.get_episode_reward,   
             },
         )
 
@@ -169,43 +202,47 @@ class MComCore(gymnasium.Env):
             { 
                 "total traffic request ue": metrics.get_total_traffic_request_ue,
                 "total traffic request sensor": metrics.get_total_traffic_request_sensor,
-                "total computation request ue": metrics.get_total_computation_request_ue,
-                "total computation request sensor": metrics.get_total_computation_request_sensor,
-                "total throughput ue": metrics.calculate_total_throughput_ue,
-                "total throughput sensor": metrics.calculate_total_throughput_sensor,
+                "total transmission throughput ue": metrics.get_total_transmission_throughput_ue,
+                "total transmission throughput sensor": metrics.get_total_transmission_throughput_sensor,
+                "total processed data ue": metrics.get_total_processed_data_ue,
+                "total processed data sensor": metrics.get_total_processed_data_sensor,
+                "total processed throughput ue": metrics.get_total_processed_throughput_ue,
+                "total processed throughput sensor": metrics.get_total_processed_throughput_sensor,
+                "delayed UE jobs": metrics.get_delayed_ue_packets, 
+                "delayed sensor jobs": metrics.get_delayed_sensor_packets,   
+                "served UE jobs": metrics.get_served_ue_packets,
+                "served sensor jobs": metrics.get_served_sensor_packets, 
             },
         )
 
         config["metrics"]["bs_metrics"].update(
             {   
-                "queue size transferred UE jobs": metrics.get_bs_transferred_ue_queue_size,
-                "queue size transferred sensor jobs": metrics.get_bs_transferred_sensor_queue_size,
-                "queue size accomplished UE jobs": metrics.get_bs_accomplished_ue_queue_size,
-                "queue size accomplished sensor jobs": metrics.get_bs_accomplished_sensor_queue_size,
+                "bs queue size transferred UE jobs": metrics.get_bs_transferred_ue_jobs_queue_size,
+                "bs queue size transferred sensor jobs": metrics.get_bs_transferred_sensor_jobs_queue_size,
+                "bs queue size accomplished UE jobs": metrics.get_bs_accomplished_ue_jobs_queue_size,
+                "bs queue size accomplished sensor jobs": metrics.get_bs_accomplished_sensor_jobs_queue_size,
             },
         )
         
         config["metrics"]["ue_metrics"].update(
             {
                 "distance UE-station": metrics.user_closest_distance, 
-                "user queue size": metrics.get_ue_data_queues,
-                "traffic request": metrics.get_traffic_request_ue,
-                "computation request": metrics.get_computation_request_ue,
-                "user throughput": metrics.calculate_throughput_ue,
+                "user queue size": metrics.get_ue_data_queue_size,
+                "user traffic request": metrics.get_traffic_request_per_ue,
+                "user transmission throughput": metrics.get_transmission_throughput_per_ue,
+                "user processed data": metrics.get_processed_data_per_ue,
                 "user datarate": metrics.get_datarate_ue,
                 "user utility": metrics.user_utility, 
-                "AoRI": metrics.get_aori,
-                "AoSI": metrics.get_aosi,
             },
         )
 
         config["metrics"]["ss_metrics"].update(
             {
                 "distance sensor-station": metrics.sensor_closest_distance, 
-                "sensor queue size": metrics.get_sensor_data_queues,
-                "traffic request": metrics.get_traffic_request_sensor,
-                "computation request": metrics.get_computation_request_sensor,
-                "sensor throughput": metrics.calculate_throughput_sensor,
+                "sensor queue size": metrics.get_sensor_data_queue_size,
+                "sensor traffic request": metrics.get_traffic_request_per_sensor,
+                "sensor transmission throughput": metrics.get_transmission_throughput_per_sensor,
+                "sensor processed data": metrics.get_processed_data_per_sensor,
                 "sensor datarate": metrics.get_datarate_sensor,
                 "sensor utility": metrics.user_utility_sensor, 
             }
@@ -224,7 +261,7 @@ class MComCore(gymnasium.Env):
             "width": width,
             "height": height,
             "EP_MAX_TIME": ep_time,
-            "seed": 666,
+            "seed": 111,
             "reset_rng_episode": False,
             # used simulation models:
             "arrival": NoDeparture,
@@ -232,6 +269,7 @@ class MComCore(gymnasium.Env):
             "scheduler": ResourceFair,
             "movement": RandomWaypointMovement,
             "utility": BoundedLogUtility,
+            "sensor_placement": SensorPlacement,
             "handler": MComSmartCityHandler,
             # default cell config
             "bs": {
@@ -257,22 +295,22 @@ class MComCore(gymnasium.Env):
             # default ue job generation config
             "ue_job": {
                 "job_generation_probability": 0.7,
-                "communication_job_lambda_value": 100.0,     # in Mbps
-                "computation_job_lambda_value": 10.0,       # in units
+                "communication_job_lambda_value": 50.0,      # in units
+                "computation_job_lambda_value": 5.0,        # in units
             },
             # default sensor job generation config
             "sensor_job": {
-                "communication_job_lambda_value": 40.0,      # in Mbps
-                "computation_job_lambda_value": 4.0,         # in units
+                "communication_job_lambda_value": 70.0,       # in units
+                "computation_job_lambda_value": 7.0,          # in units
             },
             # default delay threshold for packets
             "e2e_delay_threshold": 2.0,
             "reward_calculation": {
-                "ue_penalty": -5.0,
-                "sensor_penalty": -2.0,
-                "base_reward": 10.0,
+                "ue_penalty": -1.0,
+                "sensor_penalty": 0.0,
+                "base_reward": 0.0,
                 "synch_base_reward": 10.0,
-                "discount_factor": 0.95,
+                "discount_factor": 0.9,
                 "positive_discount_factor": 0.9,      # Discount factor for positive delay
                 "negative_discount_factor": 0.8,      # Discount factor for negative delay
             }
@@ -291,6 +329,14 @@ class MComCore(gymnasium.Env):
         config.update({"movement_params": mparams})
         uparams = {"lower": -20, "upper": 20, "coeffs": (10, 0, 10)}
         config.update({"utility_params": uparams})
+        sparams = {    
+            "width": width,
+            "height": height,
+            "max_distance": 90,
+            "min_distance": 20,
+            "reset_rng_episode": False,
+        }
+        config.update({"sensor_placement_params": sparams})
 
         # set up default configuration for tracked metrics
         config.update(
@@ -319,6 +365,7 @@ class MComCore(gymnasium.Env):
             "scheduler_params",
             "movement_params",
             "utility_params",
+            "sensor_placement_params",
         ]
         for num, key in enumerate(keys):
             if key not in config:
@@ -354,6 +401,7 @@ class MComCore(gymnasium.Env):
         self.scheduler.reset()
         self.movement.reset()
         self.utility.reset()
+        self.sensor_placement.reset()
 
         # reset scheduler last served index
         self.scheduler.reset()
@@ -376,6 +424,8 @@ class MComCore(gymnasium.Env):
         
         # reset the job counter
         self.job_generator.job_counter = 0
+        self.job_generator.ue_job_counter = 0
+        self.job_generator.sensor_job_counter = 0
 
         # generate new arrival and exit times for UEs
         for ue in self.users.values():
@@ -385,6 +435,10 @@ class MComCore(gymnasium.Env):
         # generate new initial positons of UEs
         for ue in self.users.values():
             ue.x, ue.y = self.movement.initial_position(ue)
+
+        # generate new initial positons of sensors
+        for sensor in self.sensors.values():
+            sensor.x, sensor.y = self.sensor_placement.initial_position(sensor)
 
         # initially not all UEs request downlink connections (service)
         self.active = [ue for ue in self.users.values() if ue.stime <= 0]
@@ -414,10 +468,6 @@ class MComCore(gymnasium.Env):
             'comp_power_sensor': []
         }
 
-        # reset aori and aosi
-        self.aori_per_device = {}
-        self.aosi_per_device = {}
-
         # reset traffic and computation requests
         self.traffic_requests_per_device = {}
         self.traffic_requests_per_sensor = {}
@@ -425,8 +475,29 @@ class MComCore(gymnasium.Env):
         self.computation_requests_per_sensor = {}
 
         # Reset episode reward
-        self.timestep_reward = 0
-        self.episode_reward = 0  
+        self.timestep_reward = 0.0
+        self.episode_reward = 0.0
+
+        # Performance metrics
+        self.total_episode_transmission_throughput_ue = 0.0
+        self.total_episode_transmission_throughput_sensor = 0.0
+        self.total_episode_processed_data_ue = 0.0
+        self.total_episode_processed_data_sensor = 0.0
+
+        self.avg_e2e_delay = 0.0
+        self.avg_synch_delay = 0.0
+
+        self.processed_throughput_ue = 0.0
+        self.processed_throughput_sensor = 0.0
+        self.total_episode_processed_throughput_ue = 0.0
+        self.total_episode_processed_throughput_sensor = 0.0
+
+        self.total_episode_ue_packets_generated = 0.0
+        self.total_episode_sensor_packets_generated = 0.0
+        self.total_episode_ue_packets_delayed = 0.0
+        self.total_episode_sensor_packets_delayed = 0.0
+        self.total_episode_ue_packets_served = 0.0
+        self.total_episode_sensor_packets_served = 0.0
 
         # set time of last UE's departure
         self.max_departure = max(ue.extime for ue in self.users.values())
@@ -535,10 +606,27 @@ class MComCore(gymnasium.Env):
 
             # If a closest base station is found, establish the connection
             if closest_bs:
-                sensor.connected_base_station = closest_bs
+                sensor.connected_bs = closest_bs
                 if closest_bs not in self.connections_sensor:
                     self.connections_sensor[closest_bs] = set()
                 self.connections_sensor[closest_bs].add(sensor)
+
+    def connect_ue_sensor(self) -> None:
+        """Connect each UE to the closest sensor."""
+        for ue in self.users.values():
+            closest_sensor: Optional[Sensor] = None
+            min_distance = float('inf')
+
+            # Iterate through all sensors to find the closest one
+            for sensor in self.sensors.values():
+                distance = np.sqrt((ue.x - sensor.x) ** 2 + (ue.y - sensor.y) ** 2)
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_sensor = sensor
+
+            # If a closest sensor is found, establish the connection
+            if closest_sensor:
+                ue.connected_sensor = closest_sensor
 
     def step(self, actions: Tuple[float, float]):
         assert not self.time_is_up, "step() called on terminated episode"
@@ -546,6 +634,7 @@ class MComCore(gymnasium.Env):
         # connect UEs and sensors to the closest base station and establish connection
         self.connect_bs_ue()
         self.connect_bs_sensor()
+        self.connect_ue_sensor()
 
         # check snr thresholds, release established connections that moved e.g. out-of-range
         self.update_connections()
@@ -553,6 +642,7 @@ class MComCore(gymnasium.Env):
         
         # log all connections
         #self.logger.log_connections(self)
+        #self.logger.log_ue_sensor_connections(self)
 
         # generate jobs for each UE and sensor
         for ue in self.users.values():
@@ -561,10 +651,10 @@ class MComCore(gymnasium.Env):
             self.job_generator.generate_job_sensor(sensor)
 
         # get traffic and computation requests from UEs and sensors
-        self.get_traffic_request_ue()
-        self.get_traffic_request_sensor()
-        self.get_computation_request_ue()
-        self.get_computation_request_sensor()
+        self.get_traffic_request_per_ue()
+        self.get_traffic_request_per_sensor()
+        self.get_computation_request_per_ue()
+        self.get_computation_request_per_sensor()
 
         # log sensor and ue data queues
         #self.logger.log_job_queues(self)
@@ -608,11 +698,17 @@ class MComCore(gymnasium.Env):
         #self.logger.log_job_queues(self)
 
         # compute the synchronization delays
-        self.delay_manager.compute_absolute_synch_delay()
+        self.job_dataframe.compute_synchronization_delay()
 
-        # compute aori and aosi
-        self.compute_aori()
-        self.compute_aosi()
+        # compute throughput for performance
+        self.processed_throughput_ue = self.job_dataframe.compute_processed_throughput_ue()
+        self.processed_throughput_sensor = self.job_dataframe.compute_processed_throughput_sensor()
+        self.total_episode_processed_throughput_ue += self.processed_throughput_ue
+        self.total_episode_processed_throughput_sensor += self.processed_throughput_sensor
+
+        # compute the transmission and synchronization delays for performance
+        self.compute_avg_transmission_delay()
+        self.compute_avg_synchronization_delay()
 
         # compute utilities from UEs' data rates & log its mean value
         self.utilities = {ue: self.utility.utility(self.macro[ue]) for ue in self.active}
@@ -632,8 +728,8 @@ class MComCore(gymnasium.Env):
         self.episode_reward += reward
 
         # log the job data frame
-        self.job_dataframe.log_ue_packets()
-        self.job_dataframe.log_sensor_packets()
+        #self.job_dataframe.log_ue_packets()
+        #self.job_dataframe.log_sensor_packets()
 
         # evaluate metrics and update tracked metrics given the core simulation
         self.monitor.update(self)
@@ -782,71 +878,52 @@ class MComCore(gymnasium.Env):
         return util
 
 
-    def get_traffic_request_ue(self):
-        """Get the traffic request from all UEs at the current timestep."""
-        self.traffic_requests_per_device = {ue.ue_id: ue.total_traffic_request for ue in self.users.values()}
-        return self.traffic_requests_per_device
+    def get_traffic_request_per_ue(self):
+        """Get the traffic request per UE at the current timestep."""
+        self.traffic_request_per_device = {ue.ue_id: ue.total_traffic_request for ue in self.users.values()}
+        return self.traffic_request_per_device
 
-    def get_traffic_request_sensor(self):
-        """Get the traffic request from all sensors at the current timestep."""
-        self.traffic_requests_per_sensor = {sensor.sensor_id: sensor.total_traffic_request for sensor in self.sensors.values()}
-        return self.traffic_requests_per_sensor
+    def get_traffic_request_per_sensor(self):
+        """Get the traffic request per sensor at the current timestep."""
+        self.traffic_request_per_sensor = {sensor.sensor_id: sensor.total_traffic_request for sensor in self.sensors.values()}
+        return self.traffic_request_per_sensor
 
-    def get_computation_request_ue(self):
-        """Get the computation request from all UEs at the current timestep."""
+    def get_computation_request_per_ue(self):
+        """Get the computation request per UE at the current timestep."""
         self.computation_requests_per_device = {ue.ue_id: ue.total_computation_request for ue in self.users.values()}
         return self.computation_requests_per_device
 
-    def get_computation_request_sensor(self):
-        """Get the computation request from all sensors at the current timestep."""
+    def get_computation_request_per_sensor(self):
+        """Get the computation request per sensor at the current timestep."""
         self.computation_requests_per_sensor = {sensor.sensor_id: sensor.total_computation_request for sensor in self.sensors.values()}
         return self.computation_requests_per_sensor
 
+    def compute_avg_transmission_delay(self) -> float:
+        """Compute avg e2e_delay per packet for all accomplished packets."""
+        accomplished_packets = self.job_dataframe.df_ue_packets[self.job_dataframe.df_ue_packets['e2e_delay'].notnull()].copy()
 
-    def compute_aori(self) -> Dict[int, Optional[float]]:
-        """Compute AoRI (Age of Request Information) for all accomplished packets at the current timestep."""
-        # TODO: handling missing data -> what can we put if there is no accomplished packets? None?
-        # TODO: is sum the best aggregation way? -> can we use max or mean?
-        self.aori_per_device = {ue.ue_id: None for ue in self.users.values()}
+        if accomplished_packets.empty:
+            self.avg_e2e_delay = 0.0
+            return self.avg_e2e_delay
+         
+        total_delay = accomplished_packets['e2e_delay'].sum()
+        packet_count = len(accomplished_packets)
+        self.avg_e2e_delay = total_delay / packet_count
+        return self.avg_e2e_delay
 
-        accomplished_packets = self.job_dataframe.df_ue_packets[
-            (self.job_dataframe.df_ue_packets['accomplished_time'] == self.time)
-        ].copy()
+    def compute_avg_synchronization_delay(self) -> float:
+        """Compute avg synch delay per packet for all accomplished packets."""
+        accomplished_packets = self.job_dataframe.df_ue_packets[(self.job_dataframe.df_ue_packets['synch_delay'].notnull())].copy()
+
+        if accomplished_packets.empty:
+            self.avg_synch_delay = 0.0
+            return self.avg_synch_delay
         
-        if not accomplished_packets.empty:
-            # Group accomplished packets by device ID, sum the e2e delay for each device, convert to dictionary
-            aori_logs_per_user = (accomplished_packets
-                .groupby('device_id')
-                .agg({'e2e_delay': 'sum'})
-                .to_dict()['e2e_delay'])
-            
-            # Update only the values that exist
-            self.aori_per_device.update(aori_logs_per_user)
-
-        return self.aori_per_device
-    
-    def compute_aosi(self) -> Dict:
-        """Compute AoSI for all accomplished UE packets at the current timestep."""
-        # TODO: is sum the best aggregation way? -> can we use max or mean?
-        self.aosi_per_device = {ue.ue_id: None for ue in self.users.values()}
-
-        accomplished_packets = self.job_dataframe.df_ue_packets[
-            (self.job_dataframe.df_ue_packets['synch_reward'].isnull())
-        ].copy()
-
-        if not accomplished_packets.empty:
-            # Group accomplished packets by device ID, sum the synch delay for each device, convert to dictionary
-            aosi_logs_per_user = (accomplished_packets
-                .groupby('device_id')
-                .agg({'synch_delay': 'sum'})
-                .to_dict()['synch_delay'])
-            
-            # Update only the values that exist
-            self.aosi_per_device.update(aosi_logs_per_user)
-
-        return self.aosi_per_device
-
-
+        total_delay = accomplished_packets['synch_delay'].sum()
+        packet_count = len(accomplished_packets)        
+        self.avg_synch_delay = total_delay / packet_count
+        return self.avg_synch_delay
+         
     def bs_isolines(self, drate: float) -> Dict:
         """Isolines where UEs could still receive `drate` max. data rate."""
         isolines = {}
@@ -1059,13 +1136,13 @@ class MComCore(gymnasium.Env):
         ax.set_ylim([0, self.height])
 
     def render_dashboard(self, ax) -> None:
-        mean_aoris = self.monitor.performance_results["total aori"]
+        mean_aoris = self.monitor.performance_results["average e2e delay"]
         mean_aori = mean_aoris[-1]
-        total_mean_aori = np.mean(mean_aoris)
+        #total_mean_aori = np.mean(mean_aoris)
 
-        mean_aosis = self.monitor.performance_results["total aosi"]
+        mean_aosis = self.monitor.performance_results["average synch delay"]
         mean_aosi = mean_aosis[-1]
-        total_mean_aosi = np.mean(mean_aosis)
+        #total_mean_aosi = np.mean(mean_aosis)
 
         # remove simulation axis's ticks and spines
         ax.get_xaxis().set_visible(False)
@@ -1076,11 +1153,10 @@ class MComCore(gymnasium.Env):
         ax.spines["right"].set_visible(False)
         ax.spines["left"].set_visible(False)
 
-        rows = ["Current", "History"]
-        cols = ["AoRI", "AoSI"]
+        rows = ["Current"]
+        cols = ["e2e delay", "synch delay"]
         text = [
             [f"{mean_aori:.2f}", f"{mean_aosi:.2f}"],
-            [f"{total_mean_aori:.2f}", f"{total_mean_aosi:.2f}"],
         ]
 
         table = ax.table(

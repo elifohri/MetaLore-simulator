@@ -52,14 +52,27 @@ class LoggerManager:
                 for job in queue:
                     self.log_simulation(
                         f"Time step: {self.env.time} {queue_name} - {entity}: "
-                        f"Job: {job['packet_id']}, Initial: {job['initial_request_size']} MB, "
-                        f"Remaining: {job['remaining_request_size']:.3f} MB, Computation: {job['computation_request']} units"
+                        f"Job: {job['packet_id']}, Initial: {job['initial_request_size']} MB, Remaining: {job['remaining_request_size']:.3f} MB, "
+                        f"Initial Computation: {job['initial_computation_request']} units, Remaining Computation: {job['remaining_computation_request']} units"
                     )
 
     def log_connections(self, env) -> None:
         # Log connections between base stations and devices.
         self.log_simulation(f"Time step: {env.time} BS-UE connections: {self._format_connections(env.connections)}")
         self.log_simulation(f"Time step: {env.time} BS-Sensor connections: {self._format_connections(env.connections_sensor)}")
+
+    def log_ue_sensor_connections(self, env) -> None:
+        # Log the connections between UEs and their closest sensors in a single line.
+        connections = []
+        for ue in env.users.values():
+            connected_sensor = getattr(ue, 'connected_sensor', None)
+            if connected_sensor:
+                connections.append(f"UE {ue.ue_id}: Sensor {connected_sensor.sensor_id}")
+            else:
+                connections.append(f"UE {ue.ue_id}: No Sensor")
+
+        # Log all connections in one line
+        self.log_simulation(f"Time step: {env.time} UE-Sensor Connections: {', '.join(connections)}")
 
     def log_datarates(self, env) -> None:
         # Log data transfer rates for all connections.

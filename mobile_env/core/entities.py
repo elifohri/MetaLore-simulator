@@ -22,6 +22,8 @@ class BaseStation:
         self.tx_power = tx  # in dBm
         self.height = height  # in m
         self.computational_power = computational_power  # units
+        self.computation_request_ue: float = 0.0
+        self.computation_request_sensor: float = 0.0
 
         self.transferred_jobs_ue = self._init_job_queue()
         self.transferred_jobs_sensor = self._init_job_queue()
@@ -37,7 +39,12 @@ class BaseStation:
 
     def _init_job_queue(self) -> JobQueue:
         return JobQueue()
+    
+    def update_computation_request_ue(self, comp_request: float) -> None:
+        self.computation_request_ue += comp_request
 
+    def update_computation_request_sensor(self, comp_request: float) -> None:
+        self.computation_request_sensor += comp_request
 
 class UserEquipment:
     def __init__(
@@ -63,6 +70,8 @@ class UserEquipment:
         self.data_buffer_uplink = self._init_job_queue()
         self.total_traffic_request: float = 0.0
         self.total_computation_request: float = 0.0
+        self.connected_bs: BaseStation = None
+        self.connected_sensor: Sensor = None
 
     @property
     def point(self):
@@ -82,21 +91,22 @@ class UserEquipment:
 
 class Sensor:
     def __init__(
-            self,
-            sensor_id: int,
-            pos: Tuple[float, float],
-            height: float,
-            snr_tr: float,
-            noise: float,
+        self,
+        sensor_id: int,
+        height: float,
+        snr_tr: float,
+        noise: float,
     ):
         self.sensor_id = sensor_id
-        self.x, self.y = pos
+        self.x: float = None 
+        self.y: float = None
         self.height = height
         self.snr_threshold = snr_tr
         self.noise = noise
         self.data_buffer_uplink = self._init_job_queue()
         self.total_traffic_request: float = 0.0
         self.total_computation_request: float = 0.0
+        self.connected_bs: BaseStation = None
 
     @property
     def point(self):

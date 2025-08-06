@@ -14,18 +14,19 @@ class JobTransferManager:
     within the simulation environment.
     """
 
-    def __init__(self, env):
+    def __init__(self, env, data_frame):
         self.env = env
         self.logger = env.logger
-        self.throughput_ue = {}
-        self.throughput_sensor = {}
+        self.data_frame = data_frame
+        self.transmission_throughput_ue = {ue.ue_id: 0.0 for ue in self.env.users.values()}
+        self.transmission_throughput_sensor = {sensor.sensor_id: 0.0 for sensor in self.env.sensors.values()}
 
-    def reset_throughput(self) -> None:
-        self.throughput_ue = {ue.ue_id: 0.0 for ue in self.env.users.values()}
-        self.throughput_sensor = {sensor.sensor_id: 0.0 for sensor in self.env.sensors.values()}
+    def reset_transmission_throughput(self) -> None:
+        self.transmission_throughput_ue = {ue.ue_id: 0.0 for ue in self.env.users.values()}
+        self.transmission_throughput_sensor = {sensor.sensor_id: 0.0 for sensor in self.env.sensors.values()}
 
     def transfer_data_uplink(self) -> None:
-        self.reset_throughput()
+        self.reset_transmission_throughput()
         for bs in self.env.stations.values():
             self._transfer_job_to_bs(bs, self.env.connections.get(bs, []))
             self._transfer_job_to_bs(bs, self.env.connections_sensor.get(bs, []))
@@ -51,12 +52,13 @@ class JobTransferManager:
             src.update_traffic_requests(-bits_to_send)
 
             # Update the transferred data tracking
-            self._update_transferred_data(src, bits_to_send)
+            self._update_device_transmission_throughput(src, bits_to_send)
 
             if job['remaining_request_size'] <= 0:
                 job = src_buffer.dequeue_job()
                 self._update_job_timing(job)
                 dst_buffer.enqueue_job(job)
+                self.data_frame.update_after_transfer(job)
                 #self.log_transferred_job(src, dst, job, bits_to_send, full_transfer=True)
             else:
                 #self.log_transferred_job(src, dst, job, bits_to_send, full_transfer=False)
@@ -80,11 +82,11 @@ class JobTransferManager:
         job['total_transfer_time'] = job['transfer_time_end'] - job['transfer_time_start']
         job['device_queue_waiting_time'] = job['transfer_time_end'] - job['creation_time']
 
-    def _update_transferred_data(self, src: Device, bits_sent: float) -> None:
+    def _update_device_transmission_throughput(self, src: Device, bits_sent: float) -> None:
         if isinstance(src, UserEquipment):
-            self.throughput_ue[src.ue_id] += bits_sent
+            self.transmission_throughput_ue[src.ue_id] += bits_sent
         elif isinstance(src, Sensor):
-            self.throughput_sensor[src.sensor_id] += bits_sent
+            self.transmission_throughput_sensor[src.sensor_id] += bits_sent
 
     def log_transferred_job(self, src: Device, dst: BaseStation, job: Job, bits_sent: float, full_transfer: bool) -> None:
             if full_transfer:

@@ -19,6 +19,9 @@ class JobGenerationManager:
         self.logger = env.logger
         self.config = env.default_config()
         self.job_counter: int = 0
+        self.rng = np.random.default_rng(self.env.seed)
+        self.ue_job_counter:int = 0
+        self.sensor_job_counter:int = 0
 
     def _generate_index(self) -> int:
         self.job_counter += 1
@@ -26,7 +29,7 @@ class JobGenerationManager:
 
     def _generate_request(self, job_type: str, key: str) -> float:
         poisson_lambda = self.config[job_type][key]
-        return float(max(np.random.poisson(lam=poisson_lambda), 1.0))
+        return float(max(self.rng.poisson(lam=poisson_lambda), 1.0))
 
     def _generate_job(self, time: float, device_id: int, device_type: str, job_type: str) -> Job:
         job_index = self._generate_index()
@@ -37,9 +40,10 @@ class JobGenerationManager:
             'packet_id': job_index,
             'device_type': device_type,
             'device_id': device_id,
-            'computation_request': computation_request_size,
             'initial_request_size': communication_request_size,
             'remaining_request_size': communication_request_size,
+            'initial_computation_request': computation_request_size,
+            'remaining_computation_request': computation_request_size,
             'creation_time': time,
             'transfer_time_start': None,
             'transfer_time_end': None,
@@ -50,13 +54,16 @@ class JobGenerationManager:
             'total_accomplishment_time': None,
             'device_queue_waiting_time': None,
             'bs_queue_waiting_time': None,
+            'synched_sensor_device': None,
+            'synched_sensor_job': None,
         }
 
         return job
     
     def generate_job_ue(self, ue: UserEquipment) -> None:
-        if np.random.rand() < self.config[UE_JOB][PROBABILITY]:
+        if self.rng.random() < self.config[UE_JOB][PROBABILITY]:
             job = self._generate_job(self.env.time, ue.ue_id, USER_DEVICE, UE_JOB)
+            self.ue_job_counter += 1
             ue.data_buffer_uplink.enqueue_job(job)
             ue.update_traffic_requests(traffic_request=job[INITIAL_REQUEST_SIZE])
             ue.update_computation_requests(computation_request=job[COMPUTATION_REQUEST])
@@ -64,6 +71,7 @@ class JobGenerationManager:
 
     def generate_job_sensor(self, sensor: Sensor) -> None:
         job = self._generate_job(self.env.time, sensor.sensor_id, SENSOR, SENSOR_JOB)
+        self.sensor_job_counter += 1
         sensor.data_buffer_uplink.enqueue_job(job)
         sensor.update_traffic_requests(traffic_request=job[INITIAL_REQUEST_SIZE])
         sensor.update_computation_requests(computation_request=job[COMPUTATION_REQUEST])
@@ -72,5 +80,5 @@ class JobGenerationManager:
     def log_generated_job(self, job: Job) -> None:
         self.logger.log_simulation(
             f"Time step: {self.env.time} Job generated: {job['packet_id']} by {job['device_type']} {job['device_id']} "
-            f"with initial request of size {job['initial_request_size']} MB and computational request of {job['computation_request']} units"
+            f"with initial request of size {job['initial_request_size']} Mbits and computational request of {job['initial_computation_request']} units"
         )
