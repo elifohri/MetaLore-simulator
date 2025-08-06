@@ -4,9 +4,7 @@ authors:
 - family-names: "Ohri"
   given-names: "Elif"
   affiliation: "Sorbonne University"
-- family-names: "Bazzi"
-  given-names: "Amir"
 title: "MetaLore"
 version: 1.0.0
 date-released: 2024-06-06
-url: "https://github.com/elifohri/mobile-env"
+url: "https://github.com/elifohri/MetaLore-simulator"
