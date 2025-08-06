@@ -1,10 +1,35 @@
 # MetaLore: Learning to Orchestrate the Metaverse
 
-Metalore simulator has been developed to replicate a sub-metaverse environment for a smart city scenario. It is built upon the `mobile-env` platform, extending its functionality for adaptive communication and computation resource orchestration in smart city environments.
+**MetaLore** is a simulation environment for exploring dynamic resource allocation in **smart city** and **metaverse**-inspired systems. It models the interaction between mobile users, sensors, base stations, and edge servers in a **sub-metaverse**, where efficient orchestration of limited communication and computational resources is critical for real-time synchronization between the physical and digital worlds.
 
-This simulator is developed as part of a Master's and PhD research project to explore dynamic resource allocation in smart city networks. By using RL, the system learns the optimal control policy, dynamically splitting the available cell bandwidth and computational resources between two groups: sensors and mobile devices. 
- 
- A key contribution of the project is the novel delay modeling method integrated into the RL reward function that prioritizes synchronization between the digital and physical worlds. It leverages the age of information (AoI) to enhance user interaction quality and ensure continuity between physical and digital counterparts.
+Built upon the [`mobile-env`](https://github.com/stefanbschneider/mobile-env) framework, MetaLore extends its capabilities to support **deep reinforcement learning (DRL)**-based control and **Age of Information (AoI)**-aware optimization.
+
+---
+
+## Key Features
+
+- **Joint Resource Allocation**  
+  Dynamically splits both communication bandwidth and computational resources between mobile user equipment (UEs) and stationary environmental sensors.
+
+- ⏱**Custom AoI Metrics**  
+  Integrates novel delay-aware metrics:  
+  - **AoRI** (Age of Request Information) — measures end-to-end service latency.  
+  - **AoSI** (Age of Sensor Information) — captures data freshness from sensors.
+
+- **Multi-Objective Optimization**  
+  Balances throughput, latency and synchronization accuracy through a DRL reward function.
+
+- **DRL Integration**  
+  Fully compatible with **Gymnasium** and **Stable-Baselines3**, with native support for **Proximal Policy Optimization (PPO)**.
+
+- **Visualizations & Evaluation Tools**  
+  Built-in tools for monitoring queue dynamics, AoI metrics and policy performance.
+
+---
+
+## 🎓 Research Context
+
+MetaLore was developed as part of an ongoing **PhD research project** focused on **real-time synchronization and orchestration in smart city environments**. Using reinforcement learning, the system learns to adaptively manage heterogeneous traffic demands and maintain digital twin fidelity in dynamic network conditions.
 
 <center>
   <img src="Metalore_SS.png" alt="Description" width="400">
@@ -55,7 +80,7 @@ We welcome any contributions to the MetaLore Simulator. It can be adding new fea
 
 ### Citation:
 
-f you use `MetaLore` simulator in your work, please cite our paper: coming soon!
+If you use `MetaLore` simulator in your work, please cite our paper: coming soon!
 
 ### How to contribute:
 
@@ -63,7 +88,7 @@ f you use `MetaLore` simulator in your work, please cite our paper: coming soon!
 2. Create a Feature Branch: Work on your changes in a dedicated feature branch to keep development organized.
 3. Submit a Pull Request (PR): Once your changes are ready, submit a PR describing the enhancement, fix or addition.
 
-We value well-documented and tested contributions that align with the project's goals and coding standards.
+Well-documented and tested contributions are valued that align with the project's goals and coding standards.
 
 ### Feature Your Project
 
