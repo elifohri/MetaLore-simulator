@@ -1,6 +1,7 @@
 MIT License
 
 Copyright (c) 2021 Stefan Schneider
+Modifications Copyright (c) 2025 Elif Ohri
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +20,12 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+This software is a derivative work of the `mobile-env` project by Stefan Schneider (2021),
+available at https://github.com/stefanbschneider/mobile-env.
+
+Modifications were made by Elif Ohri (2025) as part of a PhD research project at Sorbonne University.  
+These include substantial extensions for metaverse synchronization, Age of Information (AoI) metrics, 
+multi-objective DRL optimization, and smart city simulation scenarios.
