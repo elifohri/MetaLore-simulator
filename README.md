@@ -10,21 +10,21 @@ Built upon the [`mobile-env`](https://github.com/stefanbschneider/mobile-env) fr
 
 ## Key Features
 
-- **Joint Resource Allocation**  
+- **Joint Resource Allocation:**  
   Dynamically splits both communication bandwidth and computational resources between mobile user equipment (UEs) and stationary environmental sensors.
 
-- **Custom AoI Metrics**  
+- **Custom AoI Metrics:**  
   Integrates novel delay-aware metrics:  
   - **AoRI** (Age of Request Information) — measures end-to-end service latency.  
   - **AoSI** (Age of Sensor Information) — captures data freshness from sensors.
 
-- **Multi-Objective Optimization**  
+- **Multi-Objective Optimization:**  
   Balances throughput, latency and synchronization accuracy through a DRL reward function.
 
-- **DRL Integration**  
+- **DRL Integration:**  
   Fully compatible with **Gymnasium** and **Stable-Baselines3**, with native support for **Proximal Policy Optimization (PPO)**.
 
-- **Visualizations & Evaluation Tools**  
+- **Visualizations & Evaluation Tools:**  
   Built-in tools for monitoring queue dynamics, AoI metrics and policy performance.
 
 ## Research Context
@@ -34,7 +34,6 @@ MetaLore was developed as part of an ongoing **PhD research project** focused on
 <center>
   <img src="Metalore_SS.png" alt="Description" width="400">
 </center>
-
 
 ## Installation
 
@@ -83,9 +82,9 @@ If you use `MetaLore` simulator in your work, please cite our paper: coming soon
 
 ### How to contribute:
 
-1. Fork the Repository: Start by creating a fork of this repository to your GitHub account.
-2. Create a Feature Branch: Work on your changes in a dedicated feature branch to keep development organized.
-3. Submit a Pull Request (PR): Once your changes are ready, submit a PR describing the enhancement, fix or addition.
+**1. Fork the Repository:** Start by creating a fork of this repository to your GitHub account.
+**2. Create a Feature Branch:** Work on your changes in a dedicated feature branch to keep development organized.
+**3. Submit a Pull Request (PR):** Once your changes are ready, submit a PR describing the enhancement, fix or addition.
 
 We value well-documented and tested contributions that align with the project's goals and coding standards.
 
