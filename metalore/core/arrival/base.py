@@ -1,0 +1,1 @@
+# Arrivals base class
