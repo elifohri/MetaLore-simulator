@@ -295,13 +295,13 @@ class MComCore(gymnasium.Env):
             # default ue job generation config
             "ue_job": {
                 "job_generation_probability": 0.7,
-                "communication_job_lambda_value": 50.0,      # in units
-                "computation_job_lambda_value": 5.0,        # in units
+                "communication_job_lambda_value": 70.0,      # in units
+                "computation_job_lambda_value": 7.0,        # in units
             },
             # default sensor job generation config
             "sensor_job": {
-                "communication_job_lambda_value": 70.0,       # in units
-                "computation_job_lambda_value": 7.0,          # in units
+                "communication_job_lambda_value": 50.0,       # in units
+                "computation_job_lambda_value": 6.0,          # in units
             },
             # default delay threshold for packets
             "e2e_delay_threshold": 2.0,
@@ -1187,7 +1187,7 @@ class MComCore(gymnasium.Env):
         ax.plot(time, comp_ue, linewidth=1, color="black")
 
         ax.set_xlabel("Time")
-        ax.set_ylabel("Comp. Alloc. Sensor")
+        ax.set_ylabel("Comp. Alloc. UE")
         ax.set_xlim([0.0, self.EP_MAX_TIME])
         ax.set_ylim([0.0, 1.0])
 
