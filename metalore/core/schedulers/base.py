@@ -14,12 +14,20 @@ from metalore.core.entities.base_station import BaseStation
 
 class Scheduler:
 
-    def __init__(self, seed: int = None, **kwargs):
+    def __init__(
+        self, 
+        seed: int,
+        reset_rng_episode: bool,
+        **kwargs
+    ):
+        self.reset_rng_episode = reset_rng_episode
         self.seed = seed
+        self.rng = None
 
     def reset(self) -> None:
-        """Reset scheduler state."""
-        pass
+        """Reset state after episode ends."""
+        if self.reset_rng_episode or self.rng is None:
+            self.rng = np.random.default_rng(self.seed)
 
     @abstractmethod
     def share(self, bs: BaseStation, conns: List, total_resources: float) -> List[float]:
@@ -35,27 +43,3 @@ class Scheduler:
             List of resource allocations per entity
         """
         pass
-
-    def compute_rates(self, bs: BaseStation, entities: List, bandwidth: float, channel) -> Dict[Tuple, float]:
-        """
-        Compute data rates for entities connected to a base station.
-
-        Combines bandwidth scheduling with Shannon capacity to produce rates.
-
-        Args:
-            bs: Base station
-            entities: List of connected entities (UEs or sensors)
-            bandwidth: Total bandwidth to allocate
-            channel: Channel model for SNR computation
-
-        Returns:
-            Dict mapping (bs, entity) to data rate in Mbps
-        """
-        if not entities:
-            return {}
-
-        snrs = [channel.snr(bs, e) for e in entities]
-        allocated_bw = self.share(bs, entities, bandwidth)
-        rates = [bw * np.log2(1 + snr) / 1e6 for bw, snr in zip(allocated_bw, snrs)]
-
-        return {(bs, e): rate for e, rate in zip(entities, rates)}
