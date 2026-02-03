@@ -24,7 +24,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "max_steps": 100,                       # Maximum timesteps per episode
         "seed": 111,                            # Random seed (None for random)
         "reset_rng_episode": False,             # Reset RNG each episode for reproducibility
-        "num_bs": 1,                            # Number of base stations
         "num_ues": 3,                           # Number of user equipments
         "num_sensors": 3,                       # Number of sensors
         "arrival_ue": NoDeparture,              # Arrival model for UEs
@@ -34,8 +33,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "channel": OkumuraHata,                 # Channel model
         "association": ClosestAssociation,      # Device association model
         "scheduler_ue": ResourceFair,           # Resource scheduler for UEs
-        "scheduler_sensor" : ResourceFair,      # Resource scheduler for sensors
-        "handler": SmartCityHandler,                        # Handler to use for RL formulation
+        "scheduler_sensor": ResourceFair,       # Resource scheduler for sensors
+        "handler": SmartCityHandler,            # Handler to use for RL formulation
         "logger": SimulationLogger,             # Logger for logging simulation steps
     },
 

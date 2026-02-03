@@ -30,6 +30,7 @@ class UserEquipment:
         self.stime: Optional[int] = None
         self.extime: Optional[int] = None
 
+
     # --- Identity ---
 
     @property

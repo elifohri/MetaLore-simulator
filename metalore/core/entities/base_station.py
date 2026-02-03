@@ -27,6 +27,7 @@ class BaseStation:
         self._tx_power = tx_power                    # in dBm
         self._compute_capacity = compute_capacity    # in units (CPU cycles per second)
         
+        
     # --- Identity ---
 
     @property
