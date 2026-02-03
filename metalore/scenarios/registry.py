@@ -6,9 +6,9 @@ Registers Metalore environments with Gymnasium so they can be created using gymn
 Available environments:
 
     Single Cell (1BS):
-        - metalore-single_cell-smart_city-default-v0: Single BS, 10 UEs, 15 Sensors
-        - metalore-single_cell-smart_city-small-v0: Single BS, 5 UEs, 8 Sensors
-        - metalore-single_cell-smart_city-large-v0: Single BS, 20 UEs, 10 Sensors
+        - metalore-single_cell-smart_city-default-v0: 1 BS, 3 UEs, 3 Sensors
+        - metalore-single_cell-smart_city-small-v0: 1 BS, 5 UEs, 8 Sensors
+        - metalore-single_cell-smart_city-large-v0: 1 BS, 20 UEs, 10 Sensors
 
     Multi Cell (3BS):
         - metalore-multi_cell-smart_city-default-v0: 3 BSs, 15 UEs, 20 Sensors
@@ -20,7 +20,6 @@ from metalore.config import default_config, small_config, large_config, multi_ce
 
 from metalore.scenarios.single_cell import SingleCellEnv
 from metalore.scenarios.multi_cell import MultiCellEnv
-from metalore.handlers.smart_city import SmartCityHandler
 
 
 def register_environments():

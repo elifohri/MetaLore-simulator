@@ -13,3 +13,4 @@ class SingleCellEnv(MetaLoreEnv):
 
     def __init__(self, config: Dict = None, render_mode=None):
         super().__init__(config, render_mode)
+        assert self.num_bs == 1, f"SingleCellEnv requires 1 BS, got {self.num_bs}"
