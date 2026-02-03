@@ -1,1 +1,0 @@
-# Okumura-Hata model
