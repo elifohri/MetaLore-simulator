@@ -94,7 +94,7 @@ class Channel:
             def drate(point):
                 dummy.position = point
                 snr = self.snr(bs, dummy)
-                return self.datarate(bs, dummy, snr)
+                return self.datarate(dummy, snr, bs.bandwidth)
 
             points = zip(xs.tolist(), ys.tolist())
             datarates = np.asarray(list(map(drate, points)))
@@ -112,20 +112,20 @@ class Channel:
         return xs, ys
 
     @classmethod
-    def datarate(cls, bs: BaseStation, entity, snr: float) -> float:
+    def datarate(cls, entity, snr: float, bandwidth: float) -> float:
         """
-        Calculate max data rate using Shannon capacity formula.
+        Calculate data rate using Shannon capacity formula.
 
         Args:
-            bs: Base station
             entity: UE or sensor
             snr: Signal-to-noise ratio
+            bandwidth: Allocated bandwidth in Hz
 
         Returns:
             Data rate in Mbps
         """
-        if snr > entity.snr_threshold and bs.bandwidth != 0:
-            return bs.bandwidth * np.log2(1 + snr)/ 1e6         # Convert to Mbps
+        if snr > entity.snr_threshold and bandwidth != 0:
+            return bandwidth * np.log2(1 + snr) / 1e6         # Convert to Mbps
         return 0.0
 
     @classmethod

@@ -4,7 +4,6 @@ Sensor - Stationary entity that collects data from the environment.
 Sensors are fixed-position devices that periodically transmit environmental data to maintain digital twin synchronization.
 """
 
-import math
 from typing import Optional, Tuple
 
 
@@ -36,7 +35,7 @@ class Sensor:
         self.extime: Optional[int] = None
 
 
-    # ===================== Identity ========================
+    # --- Identity ---
 
     @property
     def id(self) -> int:
@@ -47,7 +46,6 @@ class Sensor:
     def device_type(self) -> str:
         return self.DEVICE_TYPE
     
-    # ===================== Position ========================
     @property
     def x(self) -> float:
         return self._x
@@ -65,23 +63,6 @@ class Sensor:
     def position(self, pos: Tuple[float, float]) -> None:
         """Set position as (x, y) coordinates."""
         self._x, self._y = pos
-    
-    @property
-    def distance_to(self, x: float, y: float) -> float:
-        """Calculate Euclidean distance from sensor to a point (x, y)."""
-        return math.sqrt((self._x - x) ** 2 + (self._y - y) ** 2)
-    
-    #@property
-    #def distance_to_base_station(self, base_station: 'BaseStation') -> float:
-    #    """Calculate Euclidean distance from sensor to a base station."""
-    #    return math.sqrt((self._x - base_station.x) ** 2 + (self._y - base_station.y) ** 2)
-    
-    #@property
-    #def distance_to_ue(self, ue: 'UserEquipment') -> float:
-    #    """Calculate Euclidean distance from sensor to a user equipment."""
-    #    return math.sqrt((self._x - ue.x) ** 2 + (self._y - ue.y) ** 2)
-    
-    # ===================== Physical ========================
 
     @property
     def height(self) -> float:
@@ -98,8 +79,6 @@ class Sensor:
         """Receiver noise power in Watts."""
         return self._noise
 
-    # ===================== Sensing ========================
-
     @property   
     def sensing_range(self) -> float:
         """Sensing range in meters."""
@@ -109,33 +88,11 @@ class Sensor:
     def update_interval(self) -> int:
         """Data update interval in seconds."""
         return self._update_interval    
-    
-    # ===================== Mobility ========================
-    
+
     @property
     def velocity(self) -> float:
         """Velocity of the sensor in meters/second."""
         return self._velocity
-
-    # ===================== Association ========================
-
-    #@property
-    #def connected_user_equipment(self) -> 'UserEquipment':
-    #    """Get the connected user equipment for synchronization."""
-    #    return self._connected_user_equipment
-    
-    #@connected_user_equipment.setter
-    #def connected_user_equipment(self, ue: 'UserEquipment') -> None:
-    #    """Set the connected user equipment for synchronization."""
-    #    self._connected_user_equipment = ue
-
-    # ===================== Reset =============================
-
-    #def reset(self) -> None:
-    #    """Reset sensor state for a new simulation episode."""
-    #    self._connected_user_equipment = None
-
-    # =========================================================
 
     def __str__(self) -> str:
         return f"Sensor(id={self._id})"

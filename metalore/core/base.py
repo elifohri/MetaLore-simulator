@@ -82,7 +82,7 @@ class MetaLoreEnv(gymnasium.Env):
         self.active_sensors: List[Sensor] = []
 
         # Datarates and utilities
-        self.datarates: Dict[Tuple[BaseStation, UserEquipment], float] = {}
+        self.datarates_ue: Dict[Tuple[BaseStation, UserEquipment], float] = {}
         self.datarates_sensor: Dict[Tuple[BaseStation, Sensor], float] = {}
         self.utilities: Dict[UserEquipment, float] = {}
         self.utilities_sensor: Dict[Sensor, float] = {}
@@ -119,7 +119,7 @@ class MetaLoreEnv(gymnasium.Env):
     @property
     def time_is_up(self):
         """Return true after max. time steps or once last UE departed."""
-        return self.time >= min(self.EP_MAX_TIME, self.max_departure_ue)
+        return self.time >= min(self.EP_MAX_TIME, self.max_departure)
 
     def reset(self, *, seed=None, options=None) -> Tuple[np.ndarray, Dict]:
         """Reset the environment to an initial state."""
@@ -128,10 +128,12 @@ class MetaLoreEnv(gymnasium.Env):
         if options is not None:
             raise NotImplementedError("Passing extra options on env.reset() is not supported.")
 
-        self.time = 0.0
-
+        # Initialize RNG or reset
         if self.reset_rng_episode or self.rng is None:
             self.rng = np.random.default_rng(self.seed)
+
+        # Reset time
+        self.time = 0.0
 
         # Reset all components
         self.arrival_ue.reset()
@@ -153,33 +155,20 @@ class MetaLoreEnv(gymnasium.Env):
             sensor.extime = self.arrival_sensor.departure(sensor)
 
         # Generate initial positions
-        self.assign_initial_positions(self.users, "UE")
-        self.assign_initial_positions(self.sensors, "Sensor")
-
-        # Determine active entities
-        self.active_ues = sorted(
-            [ue for ue in self.users.values() if ue.stime <= 0],
-            key=lambda ue: ue.id)
-        self.active_sensors = sorted(self.sensors.values(), key=lambda s: s.id)
-
-        self.logger.log_active_entities(
-            active_ue_ids=[ue.id for ue in self.active_ues],
-            active_sensor_ids=[sensor.id for sensor in self.active_sensors]
-        )
+        self.assign_initial_positions(self.users)
+        self.assign_initial_positions(self.sensors)
 
         # Establish initial connections
         self.connection_manager.reset()
         self.connection_manager.update_all()
-        self.logger.log_associations(int(self.time), self.connections_ue, self.connections_sensor, self.users)
 
         # Reset datarates and utilities
-        self.datarates = defaultdict(float)
+        self.datarates_ue = defaultdict(float)
         self.datarates_sensor = defaultdict(float)
-        self.utilities = {}
-        self.utilities_sensor = {}
+
 
         # Set time of last UE departure
-        self.max_departure_ue = max(ue.extime for ue in self.users.values())
+        self.max_departure = max(ue.extime for ue in self.users.values())
 
         # Return initial observation and info
         obs = self.handler.observation(self)
@@ -201,34 +190,21 @@ class MetaLoreEnv(gymnasium.Env):
 
         # Update connections
         self.connection_manager.update_all()
-        self.logger.log_associations(int(self.time), self.connections_ue, self.connections_sensor, self.users)
 
-        # Allocate resources
+        # Apply action
         action_dict = self.handler.action(self, actions)
-        self.logger.log_action(
-            timestep=int(self.time),
-            bandwidth_allocation=action_dict['bandwidth_allocation'],
-            compute_allocation=action_dict['compute_allocation']
-        )
         self.allocate_bandwidth(action_dict['bandwidth_allocation'])
-        self.logger.log_datarates(int(self.time), self.datarates, self.datarates_sensor)
 
         # Compute step outputs
         reward = self.handler.reward(self)
         observation = self.handler.observation(self)
         info = self.handler.info(self)
-        record_step_metrics(self, int(self.time), action_dict, reward)
 
         # Update positions via movement models
         for ue in self.users.values():
             ue.position = self.movement_ue.move(ue)
         for sensor in self.sensors.values():
             sensor.position = self.movement_sensor.move(sensor)
-
-        # Update active UEs
-        self.active_ues = sorted(
-            [ue for ue in self.users.values() if ue.extime > self.time and ue.stime <= self.time],
-            key=lambda ue: ue.id)
 
         # Advance time
         self.time += 1
@@ -237,11 +213,7 @@ class MetaLoreEnv(gymnasium.Env):
         truncated = self.time_is_up
 
         if truncated:
-            self.logger.log_episode_summary(
-                episode=self.episode_count,
-                total_reward=reward,
-                steps=int(self.time)
-            )
+            info["episode reward"] = reward
 
         return observation, reward, terminated, truncated, info
 
@@ -249,7 +221,7 @@ class MetaLoreEnv(gymnasium.Env):
 
     def allocate_bandwidth(self, bandwidth_allocation: float) -> None:
         """Allocate bandwidth across all BSs, splitting between UEs and sensors."""
-        self.datarates.clear()
+        self.datarates_ue.clear()
         self.datarates_sensor.clear()
 
         for bs in self.stations.values():
@@ -259,8 +231,18 @@ class MetaLoreEnv(gymnasium.Env):
             connected_ues = sorted(self.connection_manager.get_connected_ues(bs), key=lambda e: e.id)
             connected_sensors = sorted(self.connection_manager.get_connected_sensors(bs), key=lambda e: e.id)
 
-            self.datarates.update(self.scheduler_ue.compute_rates(bs, connected_ues, bw_ue, self.channel))
-            self.datarates_sensor.update(self.scheduler_sensor.compute_rates(bs, connected_sensors, bw_sensor, self.channel))
+            # Schedule bandwidth allocation
+            ue_allocations = self.scheduler_ue.share(bs, connected_ues, bw_ue)
+            sensor_allocations = self.scheduler_sensor.share(bs, connected_sensors, bw_sensor)
+
+            # Compute data rates from channel
+            for ue, bw in zip(connected_ues, ue_allocations):
+                snr = self.channel.snr(bs, ue)
+                self.datarates_ue[(bs, ue)] = self.channel.datarate(ue, snr, bw)
+
+            for sensor, bw in zip(connected_sensors, sensor_allocations):
+                snr = self.channel.snr(bs, sensor)
+                self.datarates_sensor[(bs, sensor)] = self.channel.datarate(sensor, snr, bw)
 
     # --- Entity Creation ---
 
@@ -282,11 +264,10 @@ class MetaLoreEnv(gymnasium.Env):
 
     # --- Initial Positions ---
 
-    def assign_initial_positions(self, entities: Dict, label: str) -> None:
+    def assign_initial_positions(self, entities: Dict) -> None:
         """Generate random initial positions for a set of entities."""
         for entity in entities.values():
             entity.position = (self.rng.uniform(0, self.width), self.rng.uniform(0, self.height))
-            self.logger.log_initial_position(label, entity.id, entity.position)
 
     # --- Connection Properties ---
 

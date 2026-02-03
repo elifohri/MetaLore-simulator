@@ -20,7 +20,7 @@ def rate_map(datarates: Dict) -> Dict[int, float]:
 def record_step_metrics(env, timestep: int, action: Dict, reward: float) -> None:
     """Record per-timestep metrics for post-episode analysis."""
     num_conns = env.connection_manager.get_num_connections()
-    ue_rates = rate_map(env.datarates)
+    ue_rates = rate_map(env.datarates_ue)
     sensor_rates = rate_map(env.datarates_sensor)
 
     env.logger.log_metrics(timestep, {
