@@ -52,9 +52,12 @@ class SmartCityHandler(Handler):
         return 1.0  
 
     @classmethod
-    def check(cls, env) -> bool:
+    def check(cls, env) -> None:
         """Check if handler is applicable to simulation configuration."""
-        return env.config.get("scenario") == "smart_city"
+        assert all(
+            ue.stime <= 0.0 and ue.extime >= env.EP_MAX_TIME
+            for ue in env.users.values()
+        ), "Central environment cannot handle a changing number of UEs."
     
     @classmethod
     def info(cls, env) -> Dict:

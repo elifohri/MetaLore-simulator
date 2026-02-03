@@ -101,7 +101,7 @@ class MetaLoreEnv(gymnasium.Env):
         self.renderer = Renderer(self)
 
         # Handler (defines action/observation/reward)
-        self.handler = env_config['handler']()
+        self.handler = env_config['handler']
         self.action_space = self.handler.action_space(self)
         self.observation_space = self.handler.observation_space(self)
 

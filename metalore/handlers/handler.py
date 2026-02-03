@@ -1,14 +1,15 @@
 """
 Base Handler for MetaLore Environments.
 
-Handlers define how the RL agent interacts with the environment:
+Handlers define how the RL agent interacts with the environment.
 """
 
-from abc import ABC, abstractmethod
-from typing import Any
+from abc import abstractmethod
+from typing import Any, Dict
+import numpy as np
 from gymnasium.spaces import Space
 
-class Handler(ABC):
+class Handler:
 
     @classmethod
     @abstractmethod
@@ -30,22 +31,22 @@ class Handler(ABC):
 
     @classmethod
     @abstractmethod
-    def observation(cls, env):
+    def observation(cls, env) -> np.ndarray:
         """Computes observations for agent."""
         pass
 
     @classmethod
     @abstractmethod
-    def reward(cls, env):
+    def reward(cls, env) -> float:
         """Computes rewards for agent."""
         pass
 
     @classmethod
-    def check(cls, env):
+    def check(cls, env) -> None:
         """Check if handler is applicable to simulation configuration."""
         pass
 
     @classmethod
-    def info(cls, env):
+    def info(cls, env) -> Dict:
         """Compute information for feedback loop."""
         return {}
