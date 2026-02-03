@@ -4,12 +4,12 @@ Base Movement class for MetaLore.
 Abstract base class that defines the interface for movement patterns.
 """
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import Tuple
 import numpy as np
 
 
-class Movement():
+class Movement:
 
     def __init__(
         self,
@@ -22,7 +22,6 @@ class Movement():
         self.width = width
         self.height = height
 
-        # RNG for movement and initial positions
         self.reset_rng_episode = reset_rng_episode
         self.seed = seed
         self.rng = None

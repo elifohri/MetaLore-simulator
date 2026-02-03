@@ -5,26 +5,30 @@ Abstract base class that defines the interface for channel models.
 """
 
 from abc import abstractmethod
-from typing import Dict, Tuple, Union
+from typing import Dict, Tuple
 
 import numpy as np
 
 from metalore.core.entities.base_station import BaseStation
-from metalore.core.entities.user_equipment import UserEquipment
-from metalore.core.entities.sensor import Sensor
 
 EPSILON = 1e-16
 
 
 class Channel:
 
-    def __init__(self, seed: int = None, **kwargs):
+    def __init__(
+        self, 
+        seed: int,
+        reset_rng_episode: bool,
+        **kwargs
+    ):
+        self.reset_rng_episode = reset_rng_episode
         self.seed = seed
         self.rng = None
 
     def reset(self) -> None:
-        """Reset channel state."""
-        if self.seed is not None:
+        """Reset state after episode ends."""
+        if self.reset_rng_episode or self.rng is None:
             self.rng = np.random.default_rng(self.seed)
 
     @abstractmethod
@@ -52,17 +56,18 @@ class Channel:
         Returns:
             Signal-to-noise ratio
         """
-        loss = self.power_loss(bs, entity)              # Received power in dBm
+        loss = self.power_loss(bs, entity)              # Path loss in dB
         power = 10 ** ((bs.tx_power - loss) / 10)       # Convert dBm to Watts
         return power / entity.noise
 
-    def isoline(self, bs: BaseStation, ue_config: Dict, map_bounds: Tuple[float, float], dthresh: float, num: int = 32) -> Tuple:
+    def isoline(self, bs: BaseStation, entity_class, entity_config: Dict, map_bounds: Tuple[float, float], dthresh: float, num: int = 32) -> Tuple:
         """
         Compute isoline where devices receive at least dthresh max data rate.
 
         Args:
             bs: Base station
-            ue_config: UE configuration for dummy device
+            entity_class: Entity class to use (UserEquipment or Sensor)
+            entity_config: Configuration for dummy device
             map_bounds: (width, height) of the map
             dthresh: Data rate threshold
             num: Number of points on the isoline
@@ -72,7 +77,7 @@ class Channel:
         """
         width, height = map_bounds
 
-        dummy = UserEquipment(ue_id=None, position=(0, 0), **ue_config)
+        dummy = entity_class(**entity_config)
 
         isoline = []
 
@@ -87,7 +92,7 @@ class Channel:
 
             # Compute data rate for each point
             def drate(point):
-                dummy.x, dummy.y = point
+                dummy.position = point
                 snr = self.snr(bs, dummy)
                 return self.datarate(bs, dummy, snr)
 
@@ -119,7 +124,7 @@ class Channel:
         Returns:
             Data rate in Mbps
         """
-        if snr > entity.snr_threshold or bs.bandwidth != 0:
+        if snr > entity.snr_threshold and bs.bandwidth != 0:
             return bs.bandwidth * np.log2(1 + snr)/ 1e6         # Convert to Mbps
         return 0.0
 

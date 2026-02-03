@@ -8,7 +8,7 @@ from abc import abstractmethod
 import numpy as np
 
 
-class Arrival():
+class Arrival:
 
     def __init__(
         self,
