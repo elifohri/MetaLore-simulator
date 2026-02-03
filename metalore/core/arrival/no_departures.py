@@ -17,6 +17,6 @@ class NoDeparture(Arrival):
         """All entities arrive at timestep 0."""
         return 0
     
-    def departure(self, entitiy) -> int:
-        """All entitties stay until episode ends."""
+    def departure(self, entity) -> int:
+        """All entities stay until episode ends."""
         return self.ep_time

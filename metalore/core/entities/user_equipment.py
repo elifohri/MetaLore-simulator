@@ -5,7 +5,7 @@ UEs move around the simulation area, generate service requests, and connect to b
 """
 
 import math
-from typing import Tuple
+from typing import Optional, Tuple
 
 
 class UserEquipment:
@@ -26,6 +26,10 @@ class UserEquipment:
         self._height = height
         self._snr_threshold = snr_threshold
         self._noise = noise
+
+        # Arrival and departure times
+        self.stime: Optional[int] = None
+        self.extime: Optional[int] = None
 
         # Associated sensor for synchronization
         #self._connected_sensor: 'Sensor' = None

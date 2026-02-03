@@ -120,7 +120,7 @@ class Renderer:
 
         colormap = cm.get_cmap("RdYlGn")
         # define normalization for unscaled utilities
-        unorm = plt.Normalize(self.utility.lower, self.utility.upper)
+        unorm = plt.Normalize(self.env.utility.lower, self.env.utility.upper)
 
         env = self.env
         

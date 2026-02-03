@@ -5,7 +5,7 @@ Sensors are fixed-position devices that periodically transmit environmental data
 """
 
 import math
-from typing import Tuple
+from typing import Optional, Tuple
 
 
 class Sensor:
@@ -30,6 +30,10 @@ class Sensor:
         self._noise = noise
         self._sensing_range = sensing_range
         self._update_interval = update_interval
+
+        # Arrival and departure times
+        self.stime: Optional[int] = None
+        self.extime: Optional[int] = None
 
 
     # ===================== Identity ========================

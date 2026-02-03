@@ -13,7 +13,7 @@ class Arrival():
     def __init__(
         self,
         ep_time: int,
-        seed: int = None, 
+        seed: int = None,
         reset_rng_episode: bool = False,
         **kwargs
     ):
@@ -52,17 +52,3 @@ class Arrival():
             Timestep when entity becomes inactive.
         """
         pass
-
-    @abstractmethod
-    def is_active(self, entity, time: int) -> bool:
-        """
-        Check if entity is active at given timestep.
-        
-        Args:
-            entity: UE or Sensor
-            time: Current timestep
-            
-        Returns:
-            True if entity is active.
-        """
-        return self.arrival(entity) <= time < self.departure(entity)

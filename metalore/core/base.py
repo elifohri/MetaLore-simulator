@@ -36,17 +36,25 @@ class MetaLoreEnv(gymnasium.Env):
             config = merge_config(default_config(), config)
 
         self.config = config
-        env_cfg = config['environment']
+        env_config = config['environment']
 
         # Environment parameters
-        self.width = env_cfg['width']
-        self.height = env_cfg['height']
-        self.seed = env_cfg['seed']
-        self.reset_rng_episode = env_cfg['reset_rng_episode']
+        self.width = env_config['width']
+        self.height = env_config['height']
+        self.seed = env_config['seed']
+        self.EP_MAX_TIME = env_config['max_steps']
+        self.reset_rng_episode = env_config['reset_rng_episode']
         self.render_mode = render_mode
-        self.EP_MAX_TIME = env_cfg['max_steps']
-
         assert render_mode in self.metadata["render_modes"] + [None]
+
+        # Shared parameters for components
+        shared_params = {
+            'width': self.width,
+            'height': self.height,
+            'seed': self.seed,
+            'ep_time': self.EP_MAX_TIME,
+            'reset_rng_episode': self.reset_rng_episode,
+        }
 
         # Initialize RNG
         self.rng = np.random.default_rng(self.seed)
@@ -58,8 +66,8 @@ class MetaLoreEnv(gymnasium.Env):
 
         # Create entities
         stations = self.create_stations(config['bs']['positions'], config['bs'])
-        users = self.create_user_equipments(env_cfg['num_ues'], config['ue'])
-        sensors = self.create_sensors(env_cfg['num_sensors'], config['sensor'])
+        users = self.create_user_equipments(env_config['num_ues'], config['ue'])
+        sensors = self.create_sensors(env_config['num_sensors'], config['sensor'])
 
         self.stations: Dict[int, BaseStation] = {bs.id: bs for bs in stations}
         self.users: Dict[int, UserEquipment] = {ue.id: ue for ue in users}
@@ -80,20 +88,20 @@ class MetaLoreEnv(gymnasium.Env):
         self.utilities_sensor: Dict[Sensor, float] = {}
 
         # Instantiate components from config
-        self.arrival_ue = env_cfg['arrival_ue'](ep_time=self.EP_MAX_TIME)
-        self.arrival_sensor = env_cfg['arrival_sensor'](ep_time=self.EP_MAX_TIME)
-        self.movement_ue = env_cfg['movement_ue'](width=self.width, height=self.height, seed=self.seed)
-        self.movement_sensor = env_cfg['movement_sensor'](width=self.width, height=self.height, seed=self.seed)
-        self.channel = env_cfg['channel']()
-        self.scheduler_ue = env_cfg['scheduler_ue']()
-        self.scheduler_sensor = env_cfg['scheduler_sensor']()
-        self.logger = env_cfg['logger']()
-        self.connection_manager = env_cfg['association'](self, self.channel)
-        self.utility = BoundedLogUtility(self)
+        self.arrival_ue = env_config['arrival_ue'](**shared_params)
+        self.arrival_sensor = env_config['arrival_sensor'](**shared_params)
+        self.movement_ue = env_config['movement_ue'](**shared_params)
+        self.movement_sensor = env_config['movement_sensor'](**shared_params)
+        self.channel = env_config['channel'](**shared_params)
+        self.scheduler_ue = env_config['scheduler_ue'](**shared_params)
+        self.scheduler_sensor = env_config['scheduler_sensor'](**shared_params)
+        self.logger = env_config['logger']()
+        self.connection_manager = env_config['association'](self, self.channel)
+        self.utility = BoundedLogUtility()
         self.renderer = Renderer(self)
 
         # Handler (defines action/observation/reward)
-        self.handler = env_cfg['handler']()
+        self.handler = env_config['handler']()
         self.action_space = self.handler.action_space(self)
         self.observation_space = self.handler.observation_space(self)
 
