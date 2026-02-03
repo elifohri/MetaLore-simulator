@@ -5,7 +5,7 @@ Entities move towards randomly generated waypoints.
 When a waypoint is reached, a new random waypoint is generated.
 """
 
-from typing import Tuple, Dict
+from typing import Dict, Optional, Tuple
 import numpy as np
 
 from metalore.core.movement.base import Movement
@@ -15,7 +15,7 @@ class RandomWaypointMovement(Movement):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.waypoints: Dict[int, Tuple[float, float]] = None
+        self.waypoints: Optional[Dict[int, Tuple[float, float]]] = None
 
     def reset(self) -> None:
         """Reset for new episode."""
@@ -30,20 +30,19 @@ class RandomWaypointMovement(Movement):
             wy = self.rng.uniform(0, self.height)
             self.waypoints[entity.id] = (wx, wy)
 
-        # Distance to waypoint
+        # Direction and distance to waypoint
         position = np.array([entity.x, entity.y])
         waypoint = np.array(self.waypoints[entity.id])
-        distance = np.linalg.norm(position - waypoint)
+        direction = waypoint - position
+        distance = np.linalg.norm(direction)
 
         # If close enough, move directly to waypoint
         if distance <= entity.velocity:
-            # Remove waypoint after reaching it (new one generated next step)
             waypoint = self.waypoints.pop(entity.id)
             return waypoint
 
         # Move by velocity towards waypoint
-        direction = waypoint - position
-        direction = direction / np.linalg.norm(direction)
+        direction = direction / distance
         new_position = position + direction * entity.velocity
 
         return tuple(new_position)

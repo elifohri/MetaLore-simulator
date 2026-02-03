@@ -48,7 +48,7 @@ class MetaLoreEnv(gymnasium.Env):
         assert render_mode in self.metadata["render_modes"] + [None]
 
         # Shared parameters for components
-        shared_params = {
+        env_params = {
             'width': self.width,
             'height': self.height,
             'seed': self.seed,
@@ -88,13 +88,13 @@ class MetaLoreEnv(gymnasium.Env):
         self.utilities_sensor: Dict[Sensor, float] = {}
 
         # Instantiate components from config
-        self.arrival_ue = env_config['arrival_ue'](**shared_params)
-        self.arrival_sensor = env_config['arrival_sensor'](**shared_params)
-        self.movement_ue = env_config['movement_ue'](**shared_params)
-        self.movement_sensor = env_config['movement_sensor'](**shared_params)
-        self.channel = env_config['channel'](**shared_params)
-        self.scheduler_ue = env_config['scheduler_ue'](**shared_params)
-        self.scheduler_sensor = env_config['scheduler_sensor'](**shared_params)
+        self.arrival_ue = env_config['arrival_ue'](**env_params)
+        self.arrival_sensor = env_config['arrival_sensor'](**env_params)
+        self.movement_ue = env_config['movement_ue'](**env_params)
+        self.movement_sensor = env_config['movement_sensor'](**env_params)
+        self.channel = env_config['channel'](**env_params)
+        self.scheduler_ue = env_config['scheduler_ue'](**env_params)
+        self.scheduler_sensor = env_config['scheduler_sensor'](**env_params)
         self.logger = env_config['logger']()
         self.connection_manager = env_config['association'](self, self.channel)
         self.utility = BoundedLogUtility()
@@ -134,10 +134,10 @@ class MetaLoreEnv(gymnasium.Env):
             self.rng = np.random.default_rng(self.seed)
 
         # Reset all components
-        self.movement_ue.reset()
-        self.movement_sensor.reset()
         self.arrival_ue.reset()
         self.arrival_sensor.reset()
+        self.movement_ue.reset()
+        self.movement_sensor.reset()
         self.channel.reset()
         self.scheduler_ue.reset()
         self.scheduler_sensor.reset()

@@ -13,8 +13,8 @@ class Arrival():
     def __init__(
         self,
         ep_time: int,
-        seed: int = None,
-        reset_rng_episode: bool = False,
+        seed: int,
+        reset_rng_episode: bool,
         **kwargs
     ):
         self.ep_time = ep_time

@@ -9,23 +9,23 @@ from typing import Tuple
 import numpy as np
 
 
-class Movement(ABC):
+class Movement():
 
     def __init__(
         self,
         width: float,
         height: float,
-        seed: int = None,
-        reset_rng_episode: bool = False,
+        seed: int,
+        reset_rng_episode: bool,
         **kwargs
     ):
         self.width = width
         self.height = height
 
         # RNG for movement and initial positions
+        self.reset_rng_episode = reset_rng_episode
         self.seed = seed
         self.rng = None
-        self.reset_rng_episode = reset_rng_episode
 
     def reset(self) -> None:
         """Reset state of movement object after episode ends."""
