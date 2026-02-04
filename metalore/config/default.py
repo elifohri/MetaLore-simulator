@@ -22,7 +22,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "width": 200.0,                         # Area width in meters
         "height": 200.0,                        # Area height in meters
         "max_steps": 100,                       # Maximum timesteps per episode
-        "seed": 111,                            # Random seed (None for random)
+        "seed": 999,                            # Random seed (None for random)
         "reset_rng_episode": False,             # Reset RNG each episode for reproducibility
         "num_ues": 3,                           # Number of user equipments
         "num_sensors": 3,                       # Number of sensors

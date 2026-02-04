@@ -14,7 +14,8 @@ from metalore.config.default import default_config, merge_config
 from metalore.core.entities.base_station import BaseStation
 from metalore.core.entities.user_equipment import UserEquipment
 from metalore.core.entities.sensor import Sensor
-from metalore.visualization.utilities import BoundedLogUtility
+from metalore.core.metrics import MetricsTracker
+from metalore.utils.utility import BoundedLogUtility
 from metalore.visualization.renderer import Renderer
 
 
@@ -100,7 +101,8 @@ class MetaLoreEnv(gymnasium.Env):
         self.scheduler_sensor = env_config['scheduler_sensor'](**env_params)
         self.logger = env_config['logger']()
         self.utility = BoundedLogUtility()
-        self.renderer = Renderer(self)
+        self.metrics = MetricsTracker()
+        self.renderer = Renderer(self.utility.lower, self.utility.upper)
 
         # Handler (defines action/observation/reward)
         self.handler = env_config['handler']
@@ -136,6 +138,7 @@ class MetaLoreEnv(gymnasium.Env):
         self.scheduler_ue.reset()
         self.scheduler_sensor.reset()
         self.utility.reset()
+        self.metrics.reset()
 
         # Generate new arrival and departure times
         for ue in self.users.values():
@@ -188,7 +191,7 @@ class MetaLoreEnv(gymnasium.Env):
         self.association.update_association(self.stations, self.users, self.sensors)
         self.validate_connections()
 
-        # Apply action
+        # Apply action and allocate bandwidth among entities
         bw_split, comp_split = self.handler.action(self, actions)
         self.allocate_bandwidth(bw_split)
 
@@ -208,6 +211,9 @@ class MetaLoreEnv(gymnasium.Env):
         reward = self.handler.reward(self)
         observation = self.handler.observation(self)
         info = self.handler.info(self)
+
+        # Record metrics for this timestep
+        self.metrics.record(self, bw_split, comp_split, reward, observation)
 
         # Update positions via movement model
         for ue in self.users.values():
@@ -346,7 +352,7 @@ class MetaLoreEnv(gymnasium.Env):
         """Render the environment."""
         if self.closed:
             return
-        return self.renderer.render(mode=self.render_mode)
+        return self.renderer.render(self, mode=self.render_mode)
 
     def close(self) -> None:
         """Close the environment and its visualization."""

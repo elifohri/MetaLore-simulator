@@ -7,7 +7,6 @@ Provides visualization using matplotlib and pygame.
 import string
 import numpy as np
 import pygame
-from pygame import Surface
 from matplotlib import cm
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
@@ -19,8 +18,7 @@ from metalore.visualization.symbols import BS_SYMBOL, SENSOR_SYMBOL
 class Renderer:
     """Renders the simulation environment using matplotlib and pygame."""
 
-    def __init__(self, env):
-        self.env = env
+    def __init__(self, lower: float, upper: float):
         self.closed = False
 
         self.window = None
@@ -30,17 +28,20 @@ class Renderer:
         self.conn_isolines = None
         self.mb_isolines = None
 
+        # Cached colormap and normalizer
+        self.colormap = cm.get_cmap("RdYlGn")
+        self.unorm = plt.Normalize(lower, upper)
 
-    def render(self, mode: str = "human"):
+
+    def render(self, env, mode: str = "human"):
         """Render the environment."""
         if self.closed:
             return None
 
         # Set up matplotlib figure & axis configuration
-        fig = plt.figure()
-        fx = max(3.0 / 2.0 * 1.25 * self.env.width / fig.dpi, 8.0)
-        fy = max(1.25 * self.env.height / fig.dpi, 5.0)
-        plt.close()
+        dpi = plt.rcParams['figure.dpi']
+        fx = max(3.0 / 2.0 * 1.25 * env.width / dpi, 8.0)
+        fy = max(1.25 * env.height / dpi, 5.0)
         fig = plt.figure(figsize=(fx, fy))
         gs = fig.add_gridspec(
             ncols=2,
@@ -55,16 +56,20 @@ class Renderer:
             right=0.955,
         )
 
-        sim_ax = fig.add_subplot(gs[:, 0])          # Main simulation environment
-        dash_ax = fig.add_subplot(gs[0, 1])         # Info dashboard
-        metrics_ax = fig.add_subplot(gs[1, 1])      # Metrics
-        conn_ax = fig.add_subplot(gs[2, 1])         # Connections
+        sim_ax = fig.add_subplot(gs[:, 0])
+        metrics_ax = fig.add_subplot(gs[0, 1])
+        bw_alloc_ax = fig.add_subplot(gs[1, 1])
+        comp_alloc_ax = fig.add_subplot(gs[2, 1])
 
         # Render each component
-        self.render_simulation(sim_ax)
+        self.render_simulation(env, sim_ax)
+        self.render_metrics(env, metrics_ax)
+        self.render_bw_allocation(env, bw_alloc_ax)
+        self.render_comp_allocation(env, comp_alloc_ax)
 
         # Convert to image
-        fig.align_ylabels((metrics_ax, conn_ax))
+        fig.align_ylabels((bw_alloc_ax, comp_alloc_ax))
+        window_size = tuple(map(int, fig.get_size_inches() * fig.dpi))
         canvas = FigureCanvas(fig)
         canvas.draw()
         plt.close(fig)
@@ -82,9 +87,8 @@ class Renderer:
                 pygame.init()
                 self.clock = pygame.time.Clock()
 
-                window_size = tuple(map(int, fig.get_size_inches() * fig.dpi))
                 self.window = pygame.display.set_mode(window_size)
-                pygame.display.set_icon(Surface((0, 0)))
+                pygame.display.set_icon(pygame.Surface((0, 0)))
                 pygame.display.set_caption("MetaLore Environment")
 
             # Clear and draw
@@ -104,13 +108,11 @@ class Renderer:
         else:
             raise ValueError(f"Invalid rendering mode: {mode}")
 
-    def render_simulation(self, ax: plt.Axes) -> None:
+    def render_simulation(self, env, ax: plt.Axes) -> None:
         """Render the simulation view with entities."""
-        env = self.env
 
-        colormap = cm.get_cmap("RdYlGn")
-        # define normalization for unscaled utilities
-        unorm = plt.Normalize(env.utility.lower, env.utility.upper)
+        colormap = self.colormap
+        unorm = self.unorm
 
         for ue, utility in env.utilities_ue.items():
             # plot UE by its (unscaled) utility
@@ -188,9 +190,9 @@ class Renderer:
                 fontsize="8",
             )
 
-        # Remove axis ticks and spines
-        ax.get_xaxis().set_visible(False)
-        ax.get_yaxis().set_visible(False)
+        # Show border, hide ticks
+        ax.get_xaxis().set_ticks([])
+        ax.get_yaxis().set_ticks([])
 
         ax.spines["top"].set_visible(False)
         ax.spines["bottom"].set_visible(False)
@@ -200,13 +202,62 @@ class Renderer:
         ax.set_xlim([0, env.width])
         ax.set_ylim([0, env.height])
 
-    def render_dashboard(self, ax: plt.Axes) -> None:
+    def render_metrics(self, env, ax: plt.Axes) -> None:
         """Render the info dashboard."""
-        pass
+        mean_e2e_delay = 20
+        mean_synch_delay = 10
 
-    def render_metrics(self, ax: plt.Axes) -> None:
-        """Render metrics panel."""
-        pass
+        ax.get_xaxis().set_visible(False)
+        ax.get_yaxis().set_visible(False)
+
+        ax.spines["top"].set_visible(False)
+        ax.spines["bottom"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["left"].set_visible(False)
+
+        rows = ["Current", "Average"]
+        cols = ["e2e delay", "synch delay"]
+        text = [
+            [f"{mean_e2e_delay:.2f}", f"{mean_synch_delay:.2f}"],
+            [f"{mean_e2e_delay:.2f}", f"{mean_synch_delay:.2f}"],
+        ]
+
+        table = ax.table(
+            text,
+            rowLabels=rows,
+            colLabels=cols,
+            cellLoc="center",
+            edges="B",
+            loc="upper center",
+            bbox=[0.0, -0.25, 1.0, 1.25],
+        )
+        table.auto_set_font_size(False)
+        table.set_fontsize(11)
+
+
+    def render_bw_allocation(self, env, ax: plt.Axes) -> None:
+        bw_splits = env.metrics.actions['bw_split']
+        time = np.arange(len(bw_splits))
+        ax.plot(time, bw_splits, linewidth=1, color="blue", label="UE")
+        ax.plot(time, 1 - np.array(bw_splits), linewidth=1, color="green", label="Sensor")
+
+        ax.set_xlabel("Time")
+        ax.set_ylabel("BW Allocation")
+        ax.set_xlim([0.0, env.EP_MAX_TIME])
+        ax.set_ylim([0.0, 1.0])
+        ax.legend(loc="upper right", fontsize=8)
+
+    def render_comp_allocation(self, env, ax: plt.Axes) -> None:
+        comp_splits = env.metrics.actions['comp_split']
+        time = np.arange(len(comp_splits))
+        ax.plot(time, comp_splits, linewidth=1, color="blue", label="UE")
+        ax.plot(time, 1 - np.array(comp_splits), linewidth=1, color="green", label="Sensor")
+
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Comp. Allocation")
+        ax.set_xlim([0.0, env.EP_MAX_TIME])
+        ax.set_ylim([0.0, 1.0])
+        ax.legend(loc="upper right", fontsize=8)
 
     def close(self) -> None:
         """Close the renderer and release resources."""

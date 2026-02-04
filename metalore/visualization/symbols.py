@@ -71,5 +71,4 @@ def _create_symbol(path_string: str, rotate: float = 180):
 
 # Create the symbols (or use fallbacks)
 BS_SYMBOL = _create_symbol(BS_SYMBOL_PATH, rotate=180)
-SENSOR_SYMBOL = _create_symbol(SENSOR_SYMBOL_PATH, rotate=180)
-UE_SYMBOL = "o"            
+SENSOR_SYMBOL = _create_symbol(SENSOR_SYMBOL_PATH, rotate=180)          
