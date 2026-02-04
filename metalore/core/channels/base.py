@@ -60,6 +60,19 @@ class Channel:
         power = 10 ** ((bs.tx_power - loss) / 10)       # Convert dBm to Watts
         return power / entity.noise
 
+    def check_connectivity(self, bs: BaseStation, entity) -> bool:
+        """
+        Check if entity-BS connection is valid based on SNR threshold.
+
+        Args:
+            bs: Base station
+            entity: UE or sensor
+
+        Returns:
+            True if SNR exceeds entity's minimum threshold
+        """
+        return self.snr(bs, entity) > entity.snr_threshold
+
     def isoline(self, bs: BaseStation, entity_class, entity_config: Dict, map_bounds: Tuple[float, float], dthresh: float, num: int = 32) -> Tuple:
         """
         Compute isoline where devices receive at least dthresh max data rate.

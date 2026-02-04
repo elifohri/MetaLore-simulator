@@ -4,18 +4,28 @@ Abstract Association base class for MetaLore.
 Defines the interface for entity association models (UE-BS, Sensor-BS, UE-Sensor).
 """
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from collections import defaultdict
-from typing import Dict, Set, Optional
+from typing import Dict, Optional, Set, Union
 
 from metalore.core.entities.base_station import BaseStation
 from metalore.core.entities.user_equipment import UserEquipment
 from metalore.core.entities.sensor import Sensor
 
+Entity = Union[UserEquipment, Sensor]
 
-class Association(ABC):
-    def __init__(self, env):
-        self.env = env
+
+class Association:
+
+    def __init__(
+        self,
+        seed: int,
+        reset_rng_episode: bool,
+        **kwargs
+    ):
+        self.reset_rng_episode = reset_rng_episode
+        self.seed = seed
+        self.rng = None
 
         # Connection storage
         self.connections_ue: Dict[BaseStation, Set[UserEquipment]] = defaultdict(set)
@@ -37,26 +47,27 @@ class Association(ABC):
         pass
 
     @abstractmethod
-    def associate_ues_to_sensors(self) -> None:
-        """Associate UEs to sensors."""
+    def update_nearest_sensor(self) -> None:
+        """Update each UE's nearest_sensor with the closest sensor."""
         pass
 
     @abstractmethod
-    def update_all(self) -> None:
+    def update_association(self) -> None:
         """Perform full association update cycle."""
         pass
 
-    @abstractmethod
     def get_connected_ues(self, bs: BaseStation) -> Set[UserEquipment]:
         """Get all UEs connected to a base station."""
-        pass
+        return self.connections_ue.get(bs, set())
 
-    @abstractmethod
     def get_connected_sensors(self, bs: BaseStation) -> Set[Sensor]:
         """Get all sensors connected to a base station."""
-        pass
+        return self.connections_sensor.get(bs, set())
 
-    @abstractmethod
-    def get_num_connections(self) -> Dict[str, int]:
-        """Get total number of connections by type."""
-        pass
+    def get_bs_for_entity(self, entity: Entity) -> Optional[BaseStation]:
+        """Get the base station an entity is connected to."""
+        connections = self.connections_ue if isinstance(entity, UserEquipment) else self.connections_sensor
+        for bs, entities in connections.items():
+            if entity in entities:
+                return bs
+        return None

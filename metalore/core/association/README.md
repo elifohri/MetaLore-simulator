@@ -1,6 +1,6 @@
 # Association Module
 
-The association module handles how entities (UEs, sensors) connect to base stations in the simulation. It determines **who connects to whom** and **whether that connection is viable**.
+The association module handles how entities (UEs, sensors) connect to base stations in the simulation. It determines **who connects to whom**.
 
 ## Overview
 
@@ -20,7 +20,7 @@ UE  ----->  Sensor   (each UE links to one sensor)
 
 ## How It Works
 
-The association process runs in four steps via `update_all()`:
+The association process runs in three steps via `update_association()`:
 
 ### Step 1: Associate UEs to closest BS
 
@@ -45,17 +45,15 @@ Results are stored in `connections_ue`: a dict mapping each BS to the set of UEs
 
 ### Step 2: Associate sensors to closest BS
 
-Same process as Step 1 but for sensors. Each sensor also stores a back-reference (`sensor.connected_bs`) to its BS.
+Same process as Step 1 but for sensors.
 
-### Step 3: Associate UEs to closest sensor
+### Step 3: Update each UE's nearest sensor
 
-Same distance-based assignment. Each UE stores a reference to its nearest sensor (`ue.connected_sensor`).
+Same distance-based assignment. Each UE stores a reference to its nearest sensor (`ue.nearest_sensor`).
 
-### Step 4: Validate connections (SNR check)
+### Connection Validation (called separately from the environment)
 
-Being closest doesn't guarantee a usable connection. This step filters out connections where the signal is too weak.
-
-For each BS-entity pair, the **Okumura-Hata** channel model computes the path loss, which is used to derive the SNR. If the SNR falls below the entity's threshold, the connection is dropped.
+After association (and scheduling), the environment calls `validate_connections(channel)` to filter out connections where the signal is too weak. For each BS-entity pair, the channel model computes the SNR. If the SNR falls below the entity's threshold, the connection is dropped.
 
 ```
 BS_0: {UE_0, UE_1, UE_2}  -->  BS_0: {UE_0, UE_1}   (UE_2 dropped, SNR too low)
@@ -81,32 +79,31 @@ Abstract base class that defines the interface. Stores two connection dicts:
 The concrete implementation. Takes two arguments:
 
 - `env` - the simulation environment (holds all entities)
-- `channel` - an `OkumuraHata` channel model (used for SNR-based validation)
+- `channel` - a `Channel` model
 
 ## Key Methods
 
 | Method | Description |
 |--------|-------------|
-| `update_all()` | Runs the full 4-step association cycle |
+| `update_association()` | Runs the 3-step association cycle |
 | `reset()` | Clears all connections |
-| `check_connectivity(bs, entity)` | Checks if SNR exceeds entity's threshold |
+| `validate_connections(channel)` | Filters connections based on SNR threshold |
 | `get_connected_ues(bs)` | Returns set of UEs connected to a BS |
 | `get_connected_sensors(bs)` | Returns set of sensors connected to a BS |
 | `get_bs_for_entity(entity)` | Returns which BS an entity is connected to |
-| `get_available_bs(entity)` | Returns all BSs an entity could connect to |
-| `get_num_connections()` | Returns `{'ue': count, 'sensor': count}` |
 
 ## Usage
 
 ```python
 from metalore.core.association import ClosestAssociation
-from metalore.core.channels.okumura_hata import OkumuraHata
 
-channel = OkumuraHata(environment="urban")
 association = ClosestAssociation(env, channel)
 
-# Run full association cycle
-association.update_all()
+# Run association cycle
+association.update_association()
+
+# Validate connections
+association.validate_connections(channel)
 
 # Query results
 ues = association.get_connected_ues(some_bs)

@@ -93,10 +93,10 @@ class MetaLoreEnv(gymnasium.Env):
         self.movement_ue = env_config['movement_ue'](**env_params)
         self.movement_sensor = env_config['movement_sensor'](**env_params)
         self.channel = env_config['channel'](**env_params)
+        self.association = env_config['association'](self, self.channel, **env_params)
         self.scheduler_ue = env_config['scheduler_ue'](**env_params)
         self.scheduler_sensor = env_config['scheduler_sensor'](**env_params)
         self.logger = env_config['logger']()
-        self.connection_manager = env_config['association'](self, self.channel)
         self.utility = BoundedLogUtility()
         self.renderer = Renderer(self)
 
@@ -104,15 +104,6 @@ class MetaLoreEnv(gymnasium.Env):
         self.handler = env_config['handler']
         self.action_space = self.handler.action_space(self)
         self.observation_space = self.handler.observation_space(self)
-
-        # Log entity creation
-        for bs in stations:
-            self.logger.log_entity_creation("BS", bs.id, position=bs.position)
-        for ue in users:
-            self.logger.log_entity_creation("UE", ue.id)
-        for sensor in sensors:
-            self.logger.log_entity_creation("Sensor", sensor.id)
-        self.logger.log_entities_summary(len(stations), len(users), len(sensors))
 
     # --- Episode Lifecycle ---
 
@@ -141,6 +132,7 @@ class MetaLoreEnv(gymnasium.Env):
         self.movement_ue.reset()
         self.movement_sensor.reset()
         self.channel.reset()
+        self.association.reset()
         self.scheduler_ue.reset()
         self.scheduler_sensor.reset()
         self.utility.reset()
@@ -159,13 +151,13 @@ class MetaLoreEnv(gymnasium.Env):
         self.assign_initial_positions(self.sensors)
 
         # Establish initial connections
-        self.connection_manager.reset()
-        self.connection_manager.update_all()
+        self.association.reset()
+        self.association.update_association()
+        self.validate_connections()
 
         # Reset datarates and utilities
         self.datarates_ue = defaultdict(float)
         self.datarates_sensor = defaultdict(float)
-
 
         # Set time of last UE departure
         self.max_departure = max(ue.extime for ue in self.users.values())
@@ -175,13 +167,7 @@ class MetaLoreEnv(gymnasium.Env):
         info = self.handler.info(self)
 
         self.episode_count += 1
-        self.logger.log_reset(
-            episode=self.episode_count,
-            num_ues=self.num_ues,
-            num_sensors=self.num_sensors,
-            num_bs=self.num_bs
-        )
-
+        
         return obs, info
 
     def step(self, actions: Dict):
@@ -189,7 +175,8 @@ class MetaLoreEnv(gymnasium.Env):
         assert not self.time_is_up, "step() called on terminated episode"
 
         # Update connections
-        self.connection_manager.update_all()
+        self.association.update_association()
+        self._validate_connections()
 
         # Apply action
         action_dict = self.handler.action(self, actions)
@@ -228,8 +215,8 @@ class MetaLoreEnv(gymnasium.Env):
             bw_ue = bs.bandwidth * bandwidth_allocation
             bw_sensor = bs.bandwidth * (1 - bandwidth_allocation)
 
-            connected_ues = sorted(self.connection_manager.get_connected_ues(bs), key=lambda e: e.id)
-            connected_sensors = sorted(self.connection_manager.get_connected_sensors(bs), key=lambda e: e.id)
+            connected_ues = sorted(self.association.get_connected_ues(bs), key=lambda e: e.id)
+            connected_sensors = sorted(self.association.get_connected_sensors(bs), key=lambda e: e.id)
 
             # Schedule bandwidth allocation
             ue_allocations = self.scheduler_ue.share(bs, connected_ues, bw_ue)
@@ -269,17 +256,29 @@ class MetaLoreEnv(gymnasium.Env):
         for entity in entities.values():
             entity.position = (self.rng.uniform(0, self.width), self.rng.uniform(0, self.height))
 
+    # --- Connection Validation ---
+
+    def validate_connections(self) -> None:
+        """Filter connections based on SNR threshold."""
+        for connections in (self.association.connections_ue, self.association.connections_sensor):
+            updated = {
+                bs: {entity for entity in entities if self.channel.check_connectivity(bs, entity)}
+                for bs, entities in connections.items()
+            }
+            connections.clear()
+            connections.update(updated)
+
     # --- Connection Properties ---
 
     @property
     def connections_ue(self) -> Dict:
         """Get UE connections from connection manager."""
-        return self.connection_manager.connections_ue
+        return self.association.connections_ue
 
     @property
     def connections_sensor(self) -> Dict:
         """Get sensor connections from connection manager."""
-        return self.connection_manager.connections_sensor
+        return self.association.connections_sensor
 
     # --- Rendering ---
 

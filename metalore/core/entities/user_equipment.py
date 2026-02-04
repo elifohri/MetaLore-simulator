@@ -30,6 +30,9 @@ class UserEquipment:
         self.stime: Optional[int] = None
         self.extime: Optional[int] = None
 
+        # Association
+        self.nearest_sensor = None
+
 
     # --- Identity ---
 
