@@ -6,7 +6,7 @@ Defines the interface for entity association models (UE-BS, Sensor-BS, UE-Sensor
 
 from abc import abstractmethod
 from collections import defaultdict
-from typing import Dict, Optional, Set, Union
+from typing import Dict, List, Optional, Set, Union
 
 from metalore.core.entities.base_station import BaseStation
 from metalore.core.entities.user_equipment import UserEquipment
@@ -17,16 +17,7 @@ Entity = Union[UserEquipment, Sensor]
 
 class Association:
 
-    def __init__(
-        self,
-        seed: int,
-        reset_rng_episode: bool,
-        **kwargs
-    ):
-        self.reset_rng_episode = reset_rng_episode
-        self.seed = seed
-        self.rng = None
-
+    def __init__(self, **kwargs):
         # Connection storage
         self.connections_ue: Dict[BaseStation, Set[UserEquipment]] = defaultdict(set)
         self.connections_sensor: Dict[BaseStation, Set[Sensor]] = defaultdict(set)
@@ -37,22 +28,22 @@ class Association:
         pass
 
     @abstractmethod
-    def associate_ues_to_bs(self) -> None:
+    def associate_ues_to_bs(self, stations: Dict, users: Dict) -> None:
         """Associate UEs to base stations."""
         pass
 
     @abstractmethod
-    def associate_sensors_to_bs(self) -> None:
+    def associate_sensors_to_bs(self, stations: Dict, sensors: Dict) -> None:
         """Associate sensors to base stations."""
         pass
 
     @abstractmethod
-    def update_nearest_sensor(self) -> None:
+    def update_nearest_sensor(self, users: Dict, sensors: Dict) -> None:
         """Update each UE's nearest_sensor with the closest sensor."""
         pass
 
     @abstractmethod
-    def update_association(self) -> None:
+    def update_association(self, stations: Dict, users: Dict, sensors: Dict) -> None:
         """Perform full association update cycle."""
         pass
 

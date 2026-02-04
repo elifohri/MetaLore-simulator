@@ -8,30 +8,27 @@ import string
 import numpy as np
 import pygame
 from pygame import Surface
+from matplotlib import cm
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
-from matplotlib import cm 
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
-from metalore.visualization.symbols import BS_SYMBOL, UE_SYMBOL, SENSOR_SYMBOL
-from metalore.visualization.utilities import BoundedLogUtility
+from metalore.visualization.symbols import BS_SYMBOL, SENSOR_SYMBOL
+
 
 class Renderer:
-    
+    """Renders the simulation environment using matplotlib and pygame."""
 
     def __init__(self, env):
-
         self.env = env
         self.closed = False
 
         self.window = None
         self.clock = None
 
-
-        self.bs_symbol = BS_SYMBOL
-        self.ue_symbol = UE_SYMBOL
-        self.sensor_symbol = SENSOR_SYMBOL
-
+        # Cached isolines (computed once on first render)
+        self.conn_isolines = None
+        self.mb_isolines = None
 
 
     def render(self, mode: str = "human"):
@@ -39,7 +36,7 @@ class Renderer:
         if self.closed:
             return None
 
-        # set up matplotlib figure & axis configuration
+        # Set up matplotlib figure & axis configuration
         fig = plt.figure()
         fx = max(3.0 / 2.0 * 1.25 * self.env.width / fig.dpi, 8.0)
         fy = max(1.25 * self.env.height / fig.dpi, 5.0)
@@ -59,15 +56,12 @@ class Renderer:
         )
 
         sim_ax = fig.add_subplot(gs[:, 0])          # Main simulation environment
-        dash_ax = fig.add_subplot(gs[0, 1])         # Info dahsboard
+        dash_ax = fig.add_subplot(gs[0, 1])         # Info dashboard
         metrics_ax = fig.add_subplot(gs[1, 1])      # Metrics
         conn_ax = fig.add_subplot(gs[2, 1])         # Connections
 
         # Render each component
         self.render_simulation(sim_ax)
-        #self.render_dashboard(dash_ax)
-        #self.render_metrics(metrics_ax)
-        #self.render_connections(conn_ax)
 
         # Convert to image
         fig.align_ylabels((metrics_ax, conn_ax))
@@ -76,12 +70,10 @@ class Renderer:
         plt.close(fig)
 
         if mode == "rgb_array" or mode is None:
-            # Return RGB array
             data = np.frombuffer(canvas.tostring_rgb(), dtype=np.uint8)
             return data.reshape(canvas.get_width_height()[::-1] + (3,))
-    
+
         elif mode == "human":
-            # Render on pygame surface
             data = canvas.buffer_rgba()
             size = canvas.get_width_height()
 
@@ -90,7 +82,6 @@ class Renderer:
                 pygame.init()
                 self.clock = pygame.time.Clock()
 
-                # Set window size to figure's size in pixels
                 window_size = tuple(map(int, fig.get_size_inches() * fig.dpi))
                 self.window = pygame.display.set_mode(window_size)
                 pygame.display.set_icon(Surface((0, 0)))
@@ -109,21 +100,33 @@ class Renderer:
                     self.close()
 
             return None
-        
-        else:
-            raise ValueError(f"Invalid rednering mode: {mode}")
-        
 
+        else:
+            raise ValueError(f"Invalid rendering mode: {mode}")
 
     def render_simulation(self, ax: plt.Axes) -> None:
         """Render the simulation view with entities."""
+        env = self.env
 
         colormap = cm.get_cmap("RdYlGn")
         # define normalization for unscaled utilities
-        unorm = plt.Normalize(self.env.utility.lower, self.env.utility.upper)
+        unorm = plt.Normalize(env.utility.lower, env.utility.upper)
 
-        env = self.env
-        
+        for ue, utility in env.utilities_ue.items():
+            # plot UE by its (unscaled) utility
+            utility = env.utility.unscale(utility)
+            color = colormap(unorm(utility))
+
+            ax.scatter(
+                ue.x,
+                ue.y,
+                s=200,
+                zorder=2,
+                color=color,
+                marker="o",
+            )
+            ax.annotate(ue.id, xy=(ue.x, ue.y), ha="center", va="center")
+
         for bs in env.stations.values():
             ax.plot(
                 bs.x, bs.y,
@@ -142,40 +145,21 @@ class Renderer:
                 textcoords="offset points",
             )
 
-            # Plot BS ranges where UEs may connect or can receive at most 1MB/s
+            # Plot BS coverage ranges
             #ax.scatter(*self.conn_isolines[bs], color="gray", s=3)
             #ax.scatter(*self.mb_isolines[bs], color="black", s=3)
 
-        """
-        for ue, utility in self.utilities.items():
-            #utility = self.utility.unscale(utility)
-            #color = colormap(unorm(utility))
-        """
-
-        for ue in env.users.values():
-            ax.scatter(
-                ue.x,
-                ue.y,
-                s=200,
-                zorder=2,
-                color="red",
-                marker="o",
-            )
-            ax.annotate(ue.id, xy=(ue.x, ue.y), ha="center", va="center")
-
-        """
-        
-        for bs in self.stations.values():
-            for ue in self.connections[bs]:
+        for bs in env.stations.values():
+            for ue in env.connections_ue[bs]:
                 # color is connection's contribution to the UE's total utility
-                share = self.datarates[(bs, ue)] / self.macro[ue]
-                share = share * self.utility.unscale(self.utilities[ue])
+                share = env.datarates_ue[(bs, ue)] / env.macro_ue[ue]
+                share = share * env.utility.unscale(env.utilities_ue[ue])
                 color = colormap(unorm(share))
 
                 # add black background/borders for lines for visibility
                 ax.plot(
-                    [ue.point.x, bs.point.x],
-                    [ue.point.y, bs.point.y],
+                    [ue.x, bs.x],
+                    [ue.y, bs.y],
                     color=color,
                     path_effects=[
                         pe.SimpleLineShadow(shadow_color="black"),
@@ -184,9 +168,6 @@ class Renderer:
                     linewidth=3,
                     zorder=-1,
                 )
-
-        """
-        
 
         for sensor in env.sensors.values():
             ax.plot(
@@ -207,8 +188,7 @@ class Renderer:
                 fontsize="8",
             )
 
-
-        # Remove simulation axis's ticks and spines
+        # Remove axis ticks and spines
         ax.get_xaxis().set_visible(False)
         ax.get_yaxis().set_visible(False)
 
@@ -217,26 +197,16 @@ class Renderer:
         ax.spines["right"].set_visible(False)
         ax.spines["left"].set_visible(False)
 
-        ax.set_xlim([0, self.env.width])
-        ax.set_ylim([0, self.env.height])
-
-
+        ax.set_xlim([0, env.width])
+        ax.set_ylim([0, env.height])
 
     def render_dashboard(self, ax: plt.Axes) -> None:
-        """"Render the info dashboard."""
-        env = self.env
-
-
-
-
+        """Render the info dashboard."""
+        pass
 
     def render_metrics(self, ax: plt.Axes) -> None:
         """Render metrics panel."""
         pass
-
-
-
-
 
     def close(self) -> None:
         """Close the renderer and release resources."""

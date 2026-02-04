@@ -21,7 +21,7 @@ class SimulationLogger:
         level: int = logging.INFO,
         log_to_file: bool = True,
         log_dir: str = "logs",
-        log_to_console: bool = False,
+        log_to_console: bool = True,
     ):
 
         self.logger = logging.getLogger(name)

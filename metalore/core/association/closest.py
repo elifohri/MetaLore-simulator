@@ -8,34 +8,31 @@ from typing import Dict, List
 import numpy as np
 
 from metalore.core.association.base import Association
-from metalore.core.channels.base import Channel
 
 
 class ClosestAssociation(Association):
     """Associates entities to their closest counterpart."""
 
-    def __init__(self, env, channel: Channel, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.env = env
-        self.channel = channel
 
     def reset(self) -> None:
         """Reset all connections."""
         self.connections_ue.clear()
         self.connections_sensor.clear()
 
-    def compute_distances(self, pos_a: np.ndarray, pos_b: np.ndarray) -> np.ndarray:
+    @staticmethod
+    def compute_distances(pos_a: np.ndarray, pos_b: np.ndarray) -> np.ndarray:
         """Compute pairwise distance matrix between two position arrays."""
         return np.linalg.norm(pos_a[:, np.newaxis, :] - pos_b[np.newaxis, :, :], axis=2)
 
     # --- Association ---
 
-    def associate_entities_to_bs(self, entities: List, positions: np.ndarray, connections: Dict) -> None:
+    def associate_entities_to_bs(self, bs_list: List, entities: List, positions: np.ndarray, connections: Dict) -> None:
         """Associate entities to their closest BS."""
-        if not entities or not self.env.stations:
+        if not entities or not bs_list:
             return
 
-        bs_list = list(self.env.stations.values())
         bs_positions = np.array([[bs.x, bs.y] for bs in bs_list])
 
         # distances[i, j] = distance from entity i to BS j
@@ -53,22 +50,24 @@ class ClosestAssociation(Association):
             bs = bs_list[bs_idx]
             connections[bs].add(entity)
 
-    def associate_ues_to_bs(self) -> None:
+    def associate_ues_to_bs(self, stations: Dict, users: Dict) -> None:
         """Associate each UE to the closest BS."""
-        ue_list = list(self.env.users.values())
+        bs_list = list(stations.values())
+        ue_list = list(users.values())
         ue_positions = np.array([[ue.x, ue.y] for ue in ue_list])
-        self.associate_entities_to_bs(ue_list, ue_positions, self.connections_ue)
+        self.associate_entities_to_bs(bs_list, ue_list, ue_positions, self.connections_ue)
 
-    def associate_sensors_to_bs(self) -> None:
+    def associate_sensors_to_bs(self, stations: Dict, sensors: Dict) -> None:
         """Associate each sensor to its closest BS."""
-        sensor_list = list(self.env.sensors.values())
+        bs_list = list(stations.values())
+        sensor_list = list(sensors.values())
         sensor_positions = np.array([[s.x, s.y] for s in sensor_list])
-        self.associate_entities_to_bs(sensor_list, sensor_positions, self.connections_sensor)
+        self.associate_entities_to_bs(bs_list, sensor_list, sensor_positions, self.connections_sensor)
 
-    def update_nearest_sensor(self) -> None:
+    def update_nearest_sensor(self, users: Dict, sensors: Dict) -> None:
         """Update each UE's nearest_sensor with the closest sensor."""
-        ue_list = list(self.env.users.values())
-        sensor_list = list(self.env.sensors.values())
+        ue_list = list(users.values())
+        sensor_list = list(sensors.values())
 
         if not ue_list or not sensor_list:
             return
@@ -84,7 +83,7 @@ class ClosestAssociation(Association):
 
     # --- Main Update ---
 
-    def update_association(self) -> None:
+    def update_association(self, stations: Dict, users: Dict, sensors: Dict) -> None:
         """
         Perform full association update cycle.
 
@@ -92,6 +91,6 @@ class ClosestAssociation(Association):
         2. Associate sensors to closest BS
         3. Update each UE's nearest sensor
         """
-        self.associate_ues_to_bs()
-        self.associate_sensors_to_bs()
-        self.update_nearest_sensor()
+        self.associate_ues_to_bs(stations, users)
+        self.associate_sensors_to_bs(stations, sensors)
+        self.update_nearest_sensor(users, sensors)

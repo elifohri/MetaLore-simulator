@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Dict, Tuple
+from typing import Tuple
 
 import numpy as np
 
@@ -30,7 +30,7 @@ class BoundedLogUtility(Utility):
         lower: float = -20,
         upper: float = 20,
         coeffs: Tuple[float, float, float] = (10, 0, 10),
-        **kwargs: Dict
+        **kwargs
     ):
         super().__init__(**kwargs)
         self.lower = lower

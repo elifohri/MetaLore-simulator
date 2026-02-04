@@ -7,7 +7,7 @@ Defines the RL interface for smart city scenarios:
     - Reward: Based on synchronization and delay penalties
 """
 
-from typing import Dict
+from typing import Dict, Tuple
 import numpy as np
 from gymnasium import spaces
 
@@ -34,12 +34,12 @@ class SmartCityHandler(Handler):
         return spaces.Box(low=low, high=high, dtype=np.float32)
 
     @classmethod
-    def action(cls, env, actions) -> Dict:
-        """Process agent action into environment action."""
-        return {
-            "bandwidth_allocation": float(np.clip(actions[0], 0.0, 1.0)),
-            "compute_allocation": float(np.clip(actions[1], 0.0, 1.0)),
-        }
+    def action(cls, env, actions) -> Tuple[float, float]:
+        """Process agent action into environment action. Returns (bandwidth_allocation, compute_allocation)."""
+        return (
+            float(np.clip(actions[0], 0.0, 1.0)),
+            float(np.clip(actions[1], 0.0, 1.0)),
+        )
 
     @classmethod
     def observation(cls, env) -> np.ndarray:
@@ -62,6 +62,9 @@ class SmartCityHandler(Handler):
     @classmethod
     def info(cls, env) -> Dict:
         """Compute information for feedback loop."""
+        ue_rates = {ue.id: rate for (_, ue), rate in env.datarates_ue.items()}
+        sensor_rates = {s.id: rate for (_, s), rate in env.datarates_sensor.items()}
+
         return {
             'time': env.time,
             'num_bs': env.num_bs,
@@ -69,5 +72,7 @@ class SmartCityHandler(Handler):
             'num_sensors': env.num_sensors,
             'num_active_users': len(env.active_ues),
             'num_active_sensors': len(env.active_sensors),
+            'ue_datarates': ue_rates,
+            'sensor_datarates': sensor_rates,
         }
     

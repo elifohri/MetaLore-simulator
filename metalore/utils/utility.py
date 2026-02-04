@@ -33,9 +33,9 @@ class Utility:
 class BoundedLogUtility(Utility):
     def __init__(
         self,
-        lower: float,
-        upper: float,
-        coeffs: Tuple[float, float, float],
+        lower: float = -20.0,
+        upper: float = 20.0,
+        coeffs: Tuple[float, float, float] = (10, 0, 10),
         **kwargs: Dict
     ):
         super().__init__(**kwargs)

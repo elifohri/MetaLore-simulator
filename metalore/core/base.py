@@ -14,8 +14,6 @@ from metalore.config.default import default_config, merge_config
 from metalore.core.entities.base_station import BaseStation
 from metalore.core.entities.user_equipment import UserEquipment
 from metalore.core.entities.sensor import Sensor
-from metalore.core.metrics import record_step_metrics
-from metalore.handlers.smart_city import SmartCityHandler
 from metalore.visualization.utilities import BoundedLogUtility
 from metalore.visualization.renderer import Renderer
 
@@ -69,10 +67,12 @@ class MetaLoreEnv(gymnasium.Env):
         users = self.create_user_equipments(env_config['num_ues'], config['ue'])
         sensors = self.create_sensors(env_config['num_sensors'], config['sensor'])
 
+        # Store entities in dictionaries
         self.stations: Dict[int, BaseStation] = {bs.id: bs for bs in stations}
         self.users: Dict[int, UserEquipment] = {ue.id: ue for ue in users}
         self.sensors: Dict[int, Sensor] = {sensor.id: sensor for sensor in sensors}
 
+        # Num. of entities
         self.num_bs = len(self.stations)
         self.num_ues = len(self.users)
         self.num_sensors = len(self.sensors)
@@ -81,10 +81,12 @@ class MetaLoreEnv(gymnasium.Env):
         self.active_ues: List[UserEquipment] = []
         self.active_sensors: List[Sensor] = []
 
-        # Datarates and utilities
+        # Datarates and utilities of entities
         self.datarates_ue: Dict[Tuple[BaseStation, UserEquipment], float] = {}
         self.datarates_sensor: Dict[Tuple[BaseStation, Sensor], float] = {}
-        self.utilities: Dict[UserEquipment, float] = {}
+        self.macro_ue: Dict[UserEquipment, float] = {}
+        self.macro_sensor: Dict[Sensor, float] = {}
+        self.utilities_ue: Dict[UserEquipment, float] = {}
         self.utilities_sensor: Dict[Sensor, float] = {}
 
         # Instantiate components from config
@@ -93,7 +95,7 @@ class MetaLoreEnv(gymnasium.Env):
         self.movement_ue = env_config['movement_ue'](**env_params)
         self.movement_sensor = env_config['movement_sensor'](**env_params)
         self.channel = env_config['channel'](**env_params)
-        self.association = env_config['association'](self, self.channel, **env_params)
+        self.association = env_config['association'](**env_params)
         self.scheduler_ue = env_config['scheduler_ue'](**env_params)
         self.scheduler_sensor = env_config['scheduler_sensor'](**env_params)
         self.logger = env_config['logger']()
@@ -105,12 +107,10 @@ class MetaLoreEnv(gymnasium.Env):
         self.action_space = self.handler.action_space(self)
         self.observation_space = self.handler.observation_space(self)
 
-    # --- Episode Lifecycle ---
-
     @property
     def time_is_up(self):
         """Return true after max. time steps or once last UE departed."""
-        return self.time >= min(self.EP_MAX_TIME, self.max_departure)
+        return self.time >= min(self.EP_MAX_TIME, self.max_departure_ue)
 
     def reset(self, *, seed=None, options=None) -> Tuple[np.ndarray, Dict]:
         """Reset the environment to an initial state."""
@@ -137,7 +137,7 @@ class MetaLoreEnv(gymnasium.Env):
         self.scheduler_sensor.reset()
         self.utility.reset()
 
-        # Generate arrival and departure times
+        # Generate new arrival and departure times
         for ue in self.users.values():
             ue.stime = self.arrival_ue.arrival(ue)
             ue.extime = self.arrival_ue.departure(ue)
@@ -150,48 +150,83 @@ class MetaLoreEnv(gymnasium.Env):
         self.assign_initial_positions(self.users)
         self.assign_initial_positions(self.sensors)
 
+        # Initially not all UEs request downlink connections (service)
+        self.active_ues = sorted([ue for ue in self.users.values() if ue.stime <= 0], key=lambda ue: ue.id)
+        self.active_sensors = sorted([sensor for sensor in self.sensors.values() if sensor.stime <= 0], key=lambda sensor: sensor.id)
+
         # Establish initial connections
-        self.association.reset()
-        self.association.update_association()
+        self.association.update_association(self.stations, self.users, self.sensors)
         self.validate_connections()
 
         # Reset datarates and utilities
         self.datarates_ue = defaultdict(float)
         self.datarates_sensor = defaultdict(float)
+        self.macro_ue = {}
+        self.macro_sensor = {}
+        self.utilities_ue = {}
+        self.utilities_sensor = {}
 
         # Set time of last UE departure
-        self.max_departure = max(ue.extime for ue in self.users.values())
+        self.max_departure_ue = max(ue.extime for ue in self.users.values())
+        self.max_departure_sensor = max(sensor.extime for sensor in self.sensors.values())
 
         # Return initial observation and info
+        self.handler.check(self)
         obs = self.handler.observation(self)
         info = self.handler.info(self)
 
+        # Track episode count
         self.episode_count += 1
         
         return obs, info
 
-    def step(self, actions: Dict):
+    def step(self, actions: Tuple[float, float]):
         """Take an action in the environment."""
         assert not self.time_is_up, "step() called on terminated episode"
 
         # Update connections
-        self.association.update_association()
-        self._validate_connections()
+        self.association.update_association(self.stations, self.users, self.sensors)
+        self.validate_connections()
 
         # Apply action
-        action_dict = self.handler.action(self, actions)
-        self.allocate_bandwidth(action_dict['bandwidth_allocation'])
+        bw_split, comp_split = self.handler.action(self, actions)
+        self.allocate_bandwidth(bw_split)
+
+        # Aggregate per-BS rates into total rate per entity
+        self.macro_ue = self.macro_datarates(self.datarates_ue)
+        self.macro_sensor = self.macro_datarates(self.datarates_sensor)
+
+        ###################################
+        # TRANSFER AND COMPUTE LOGIC HERE
+        ###################################
+
+        # Compute scaled utilities from entities data rates (range [-1, 1])
+        self.utilities_ue = {ue: self.utility.scale(self.utility.utility(self.macro_ue[ue])) for ue in self.active_ues}
+        self.utilities_sensor = {sensor: self.utility.scale(self.utility.utility(self.macro_sensor[sensor])) for sensor in self.active_sensors}
 
         # Compute step outputs
         reward = self.handler.reward(self)
         observation = self.handler.observation(self)
         info = self.handler.info(self)
 
-        # Update positions via movement models
+        # Update positions via movement model
         for ue in self.users.values():
             ue.position = self.movement_ue.move(ue)
         for sensor in self.sensors.values():
             sensor.position = self.movement_sensor.move(sensor)
+
+        # Terminate existing connections for exiting entities (if mobile)
+        leaving_ues = {ue for ue in self.active_ues if ue.extime <= self.time}
+        for bs, ues in self.connections_ue.items():
+            self.connections_ue[bs] = ues - leaving_ues
+
+        leaving_sensors = {sensor for sensor in self.active_sensors if sensor.extime <= self.time}
+        for bs, sensors in self.connections_sensor.items():
+            self.connections_sensor[bs] = sensors - leaving_sensors
+
+        # Update list of active entities & add those that begin to request service
+        self.active_ues = sorted([ue for ue in self.users.values() if ue.stime <= self.time < ue.extime], key=lambda ue: ue.id)
+        self.active_sensors = sorted([sensor for sensor in self.sensors.values() if sensor.stime <= self.time < sensor.extime], key=lambda sensor: sensor.id)
 
         # Advance time
         self.time += 1
@@ -203,6 +238,58 @@ class MetaLoreEnv(gymnasium.Env):
             info["episode reward"] = reward
 
         return observation, reward, terminated, truncated, info
+    
+    
+    @staticmethod
+    def create_stations(station_positions, bs_config) -> List[BaseStation]:
+        """Create base stations from positions and config."""
+        bs_params = {k: v for k, v in bs_config.items() if k != 'positions'}
+        return [BaseStation(bs_id, pos, **bs_params) for bs_id, pos in enumerate(station_positions)]
+
+    @staticmethod
+    def create_user_equipments(num_ues, ue_config) -> List[UserEquipment]:
+        """Create user equipments from count and config."""
+        return [UserEquipment(ue_id, **ue_config) for ue_id in range(num_ues)]
+
+    @staticmethod
+    def create_sensors(num_sensors, sensor_config) -> List[Sensor]:
+        """Create sensors from count and config."""
+        return [Sensor(sensor_id, **sensor_config) for sensor_id in range(num_sensors)]
+
+    def assign_initial_positions(self, entities: Dict) -> None:
+        """Generate random initial positions for a set of entities."""
+        for entity in entities.values():
+            entity.position = (self.rng.uniform(0, self.width), self.rng.uniform(0, self.height))
+
+    @staticmethod
+    def macro_datarates(datarates: Dict) -> Dict:
+        """Sum datarates across all BSs for each entity."""
+        macro = defaultdict(float)
+        for (_, entity), rate in datarates.items():
+            macro[entity] += rate
+        return dict(macro)
+
+    # --- Connection Properties ---
+
+    @property
+    def connections_ue(self) -> Dict:
+        """Get UE connections from connection manager."""
+        return self.association.connections_ue
+
+    @property
+    def connections_sensor(self) -> Dict:
+        """Get sensor connections from connection manager."""
+        return self.association.connections_sensor
+    
+    def validate_connections(self) -> None:
+        """Filter connections based on SNR threshold."""
+        for connections in (self.association.connections_ue, self.association.connections_sensor):
+            updated = {
+                bs: {entity for entity in entities if self.channel.check_connectivity(bs, entity)}
+                for bs, entities in connections.items()
+            }
+            connections.clear()
+            connections.update(updated)
 
     # --- Bandwidth Scheduling ---
 
@@ -231,54 +318,27 @@ class MetaLoreEnv(gymnasium.Env):
                 snr = self.channel.snr(bs, sensor)
                 self.datarates_sensor[(bs, sensor)] = self.channel.datarate(sensor, snr, bw)
 
-    # --- Entity Creation ---
+    def station_utilities(self) -> Dict[BaseStation, float]:
+        """Compute average utility of UEs connected to each base station."""
+        idle = self.utility.scale(self.utility.lower)
 
-    @staticmethod
-    def create_stations(station_positions, bs_config) -> List[BaseStation]:
-        """Create base stations from positions and config."""
-        bs_params = {k: v for k, v in bs_config.items() if k != 'positions'}
-        return [BaseStation(bs_id, pos, **bs_params) for bs_id, pos in enumerate(station_positions)]
+        return {
+            bs: sum(self.utilities_ue[ue] for ue in self.connections_ue[bs]) / len(self.connections_ue[bs])
+            if self.connections_ue[bs]
+            else idle
+            for bs in self.stations.values()
+        }
 
-    @staticmethod
-    def create_user_equipments(num_ues, ue_config) -> List[UserEquipment]:
-        """Create user equipments from count and config."""
-        return [UserEquipment(ue_id, **ue_config) for ue_id in range(num_ues)]
+    def station_utilities_sensor(self) -> Dict[BaseStation, float]:
+        """Compute average utility of sensors connected to each base station."""
+        idle = self.utility.scale(self.utility.lower)
 
-    @staticmethod
-    def create_sensors(num_sensors, sensor_config) -> List[Sensor]:
-        """Create sensors from count and config."""
-        return [Sensor(sensor_id, **sensor_config) for sensor_id in range(num_sensors)]
-
-    # --- Initial Positions ---
-
-    def assign_initial_positions(self, entities: Dict) -> None:
-        """Generate random initial positions for a set of entities."""
-        for entity in entities.values():
-            entity.position = (self.rng.uniform(0, self.width), self.rng.uniform(0, self.height))
-
-    # --- Connection Validation ---
-
-    def validate_connections(self) -> None:
-        """Filter connections based on SNR threshold."""
-        for connections in (self.association.connections_ue, self.association.connections_sensor):
-            updated = {
-                bs: {entity for entity in entities if self.channel.check_connectivity(bs, entity)}
-                for bs, entities in connections.items()
-            }
-            connections.clear()
-            connections.update(updated)
-
-    # --- Connection Properties ---
-
-    @property
-    def connections_ue(self) -> Dict:
-        """Get UE connections from connection manager."""
-        return self.association.connections_ue
-
-    @property
-    def connections_sensor(self) -> Dict:
-        """Get sensor connections from connection manager."""
-        return self.association.connections_sensor
+        return {
+            bs: sum(self.utilities_sensor[sensor] for sensor in self.connections_sensor[bs]) / len(self.connections_sensor[bs])
+            if self.connections_sensor[bs]
+            else idle
+            for bs in self.stations.values()
+        }
 
     # --- Rendering ---
 
