@@ -114,8 +114,20 @@ class Renderer:
         colormap = self.colormap
         unorm = self.unorm
 
+        # Plot inactive UEs as grayed out
+        active_ue_set = set(env.utilities_ue.keys())
+        for ue in env.users.values():
+            if ue not in active_ue_set:
+                ax.scatter(
+                    ue.x, ue.y,
+                    s=200, zorder=1,
+                    color="lightgray", marker="o", alpha=0.5,
+                )
+                ax.annotate(ue.id, xy=(ue.x, ue.y), ha="center", va="center",
+                            color="gray", alpha=0.5)
+
+        # Plot active UEs colored by utility
         for ue, utility in env.utilities_ue.items():
-            # plot UE by its (unscaled) utility
             utility = env.utility.unscale(utility)
             color = colormap(unorm(utility))
 
@@ -153,9 +165,9 @@ class Renderer:
 
         for bs in env.stations.values():
             for ue in env.connections_ue[bs]:
-                # color is connection's contribution to the UE's total utility
-                share = env.datarates_ue[(bs, ue)] / env.macro_ue[ue]
-                share = share * env.utility.unscale(env.utilities_ue[ue])
+                if ue not in env.utilities_ue:
+                    continue
+                share = env.utility.unscale(env.utilities_ue[ue])
                 color = colormap(unorm(share))
 
                 # add black background/borders for lines for visibility
@@ -204,8 +216,8 @@ class Renderer:
 
     def render_metrics(self, env, ax: plt.Axes) -> None:
         """Render the info dashboard."""
-        mean_e2e_delay = 20
-        mean_synch_delay = 10
+        mean_e2e_delay = 0
+        mean_synch_delay = 0
 
         ax.get_xaxis().set_visible(False)
         ax.get_yaxis().set_visible(False)

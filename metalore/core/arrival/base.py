@@ -5,6 +5,8 @@ Abstract base class that defines the interface for arrival/departure patterns of
 """
 
 from abc import abstractmethod
+from typing import Dict
+
 import numpy as np
 
 
@@ -28,27 +30,19 @@ class Arrival:
             self.rng = np.random.default_rng(self.seed)
 
     @abstractmethod
-    def arrival(self, entity) -> int:
-        """
-        Get arrival time for an entity.
-        
+    def arrival(self, entities: Dict) -> None:
+        """Assign arrival times (stime) on each entity.
+
         Args:
-            entity: UE or Sensor
-            
-        Returns:
-            Timestep when entity becomes active
+            entities: Dictionary mapping entity id to entity object.
         """
         pass
 
     @abstractmethod
-    def departure(self, entity) -> int:
-        """
-        Get departure time for an entity.
-        
+    def departure(self, entities: Dict) -> None:
+        """Assign departure times (extime) on each entity.
+
         Args:
-            entity: UE or Sensor
-            
-        Returns:
-            Timestep when entity becomes inactive.
+            entities: Dictionary mapping entity id to entity object.
         """
         pass
