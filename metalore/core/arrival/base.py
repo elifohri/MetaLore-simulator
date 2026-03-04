@@ -14,12 +14,12 @@ class Arrival:
 
     def __init__(
         self,
-        ep_time: int,
+        ep_max_time: int,
         seed: int,
         reset_rng_episode: bool,
         **kwargs
     ):
-        self.ep_time = ep_time
+        self.ep_max_time = ep_max_time
         self.reset_rng_episode = reset_rng_episode
         self.seed = seed
         self.rng = None
@@ -31,7 +31,8 @@ class Arrival:
 
     @abstractmethod
     def arrival(self, entities: Dict) -> None:
-        """Assign arrival times (stime) on each entity.
+        """
+        Assign arrival times (stime) for each entity.
 
         Args:
             entities: Dictionary mapping entity id to entity object.
@@ -40,7 +41,8 @@ class Arrival:
 
     @abstractmethod
     def departure(self, entities: Dict) -> None:
-        """Assign departure times (extime) on each entity.
+        """
+        Assign departure times (extime) for each entity.
 
         Args:
             entities: Dictionary mapping entity id to entity object.

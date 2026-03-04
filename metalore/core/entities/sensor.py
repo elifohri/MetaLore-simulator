@@ -6,6 +6,8 @@ Sensors are fixed-position devices that periodically transmit environmental data
 
 from typing import Optional, Tuple
 
+from metalore.core.jobs.queue import TxQueue
+
 
 class Sensor:
 
@@ -34,6 +36,9 @@ class Sensor:
         self.stime: Optional[int] = None
         self.extime: Optional[int] = None
 
+        # Transmission queue: holds jobs waiting to be sent to the BS
+        self.tx_queue: TxQueue = TxQueue()
+
 
     # --- Identity ---
 
@@ -41,11 +46,7 @@ class Sensor:
     def id(self) -> int:
         """Sensor identifier."""
         return self._id
-    
-    @property
-    def device_type(self) -> str:
-        return self.DEVICE_TYPE
-    
+
     @property
     def x(self) -> float:
         return self._x
@@ -63,6 +64,11 @@ class Sensor:
     def position(self, pos: Tuple[float, float]) -> None:
         """Set position as (x, y) coordinates."""
         self._x, self._y = pos
+
+    @property
+    def velocity(self) -> float:
+        """Velocity of the sensor."""
+        return self._velocity
 
     @property
     def height(self) -> float:
@@ -86,13 +92,17 @@ class Sensor:
     
     @property
     def update_interval(self) -> int:
-        """Data update interval in seconds."""
-        return self._update_interval    
-
+        """Data update interval in timesteps."""
+        return self._update_interval
+    
     @property
-    def velocity(self) -> float:
-        """Velocity of the sensor in meters/second."""
-        return self._velocity
+    def is_mobile(self) -> bool:
+        """Indicates if the device is mobile."""
+        return self._velocity > 0
+
+    def reset_queue(self) -> None:
+        """Clear queue state for a new episode."""
+        self.tx_queue.clear()
 
     def __str__(self) -> str:
         return f"Sensor(id={self._id})"

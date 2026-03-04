@@ -15,12 +15,12 @@ class RandomWaypointMovement(Movement):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.waypoints: Optional[Dict[int, Tuple[float, float]]] = None
+        self.waypoints: Optional[Dict[int, Tuple[float, float]]] = {}
 
     def reset(self) -> None:
         """Reset for new episode."""
         super().reset()
-        self.waypoints = {}
+        self.waypoints.clear()
 
     def move(self, entity) -> Tuple[float, float]:
         """Move entity one step towards a waypoint."""

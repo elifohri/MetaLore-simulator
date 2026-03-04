@@ -1,10 +1,12 @@
 """
 User Equipment (UE) - Mobile devices in the network.
 
-UEs move around the simulation area, generate service requests, and connect to base stations for communication.
+UEs move around the simulation area, generate service requests and connect to base stations for communication.
 """
 
 from typing import Optional, Tuple
+
+from metalore.core.jobs.queue import TxQueue
 
 
 class UserEquipment:
@@ -30,8 +32,8 @@ class UserEquipment:
         self.stime: Optional[int] = None
         self.extime: Optional[int] = None
 
-        # Association
-        self.nearest_sensor = None
+        # Transmission queue: holds jobs waiting to be sent to the BS
+        self.tx_queue: TxQueue = TxQueue()
 
 
     # --- Identity ---
@@ -40,10 +42,6 @@ class UserEquipment:
     def id(self) -> int:
         """User equipment identifier."""
         return self._id
-        
-    @property
-    def device_type(self) -> str:
-        return self.DEVICE_TYPE
 
     @property
     def x(self) -> float:
@@ -64,6 +62,11 @@ class UserEquipment:
         self._x, self._y = pos
 
     @property
+    def velocity(self) -> float:
+        """Device velocity."""
+        return self._velocity
+
+    @property
     def height(self) -> float:
         """Antenna height in meters."""
         return self._height
@@ -77,17 +80,16 @@ class UserEquipment:
     def noise(self) -> float:
         """Receiver noise power in Watts."""
         return self._noise
-
-    @property
-    def velocity(self) -> float:
-        """Device velocity in m/s."""
-        return self._velocity
     
     @property
     def is_mobile(self) -> bool:
         """Indicates if the device is mobile."""
         return self._velocity > 0
     
+    def reset_queue(self) -> None:
+        """Clear queue state for a new episode."""
+        self.tx_queue.clear()
+
     def __str__(self) -> str:
         return f"UE(id={self._id})"
         

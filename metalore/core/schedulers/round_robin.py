@@ -20,6 +20,7 @@ class RoundRobin(Scheduler):
 
     def reset(self) -> None:
         """Reset scheduler state."""
+        super().reset()
         self.last_served_index.clear()
 
     def share(self, bs: BaseStation, conns: List, total_resources: float) -> List[float]:

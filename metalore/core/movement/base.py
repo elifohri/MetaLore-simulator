@@ -27,14 +27,14 @@ class Movement:
         self.rng = None
 
     def reset(self) -> None:
-        """Reset state of movement object after episode ends."""
+        """Reset state after episode ends."""
         if self.reset_rng_episode or self.rng is None:
             self.rng = np.random.default_rng(self.seed)
 
     @abstractmethod
     def move(self, entity) -> Tuple[float, float]:
         """
-        Move entity one timestep.
+        Move entity for one timestep.
 
         Args:
             entity: Entity to move (UE or sensor).

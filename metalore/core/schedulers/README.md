@@ -1,83 +1,73 @@
-# Schedulers Module
+# Schedulers
 
-The schedulers module handles how a base station divides its bandwidth among connected entities (UEs, sensors). It determines **how much bandwidth each entity gets**.
+Controls how bandwidth is divided among entities connected to a base station. The scheduler is called once per base station per timestep and returns a per-entity bandwidth allocation in Hz.
 
-## Overview
 
-When multiple entities are connected to the same base station, they share the BS's total bandwidth. The scheduler decides how to split it.
+## Base Class: `Scheduler`
 
-```
-BS_0 (20 MHz total)
- |
- +-- UE_0:  gets 10 MHz
- +-- UE_1:  gets 10 MHz
-```
+Abstract base class all schedulers must subclass. Manages the episode RNG and defines the required interface.
 
-The environment uses **two separate scheduler instances** — one for UEs and one for sensors — so each type can use a different scheduling strategy.
+**Constructor parameters** (passed via `env_params`):
 
-## How It Works
+| Parameter | Type | Description |
+|---|---|---|
+| `seed` | `int` | RNG seed for reproducibility |
+| `reset_rng_episode` | `bool` | If `True`, RNG resets to the same seed each episode |
 
-The scheduler splits the available bandwidth among connected entities via `share()`. This is the part that differs between scheduler implementations.
+**Interface:**
 
-**ResourceFair** splits equally:
-
-```
-BS_0 has 20 MHz, 3 connected UEs
-
-UE_0: 20 / 3 = 6.67 MHz
-UE_1: 20 / 3 = 6.67 MHz
-UE_2: 20 / 3 = 6.67 MHz
+```python
+def share(self, bs: BaseStation, conns: List, total_resources: float) -> List[float]:
+    """Allocate resources among connected entities. Returns one value per entity."""
 ```
 
-## Architecture
+The returned list must be the same length as `conns`. The sum of allocations should not exceed `total_resources`.
 
-```
-Scheduler (base class)
-    |
-    +-- ResourceFair     (equal split)
-```
+**`reset()`** is called at the start of each episode by the environment. It reinitialises the RNG if `reset_rng_episode` is set, or initialises it on the first call. Stateful schedulers should override `reset()` and call `super().reset()`.
 
-### `Scheduler` (base.py)
 
-Abstract base class. Subclasses must implement `share()`.
+## `ResourceFair`
 
-### `ResourceFair` (resource_fair.py)
-
-Divides bandwidth equally among all connected entities. Stateless — no memory between timesteps.
-
-## Key Methods
-
-| Method | Class | Description |
-|--------|-------|-------------|
-| `share(bs, conns, total_resources)` | All | Split bandwidth among entities (abstract) |
-| `reset()` | All | Clear scheduler state |
-
-## Usage
+The default scheduler. Splits bandwidth equally among all connected entities.
 
 ```python
 from metalore.core.schedulers import ResourceFair
-
-# Create scheduler
-scheduler = ResourceFair(seed=42, reset_rng_episode=False)
-
-# Allocate bandwidth among entities connected to a BS
-allocations = scheduler.share(bs, connected_ues, total_resources=10e6)
-# returns: [5e6, 5e6]  (Hz per entity)
 ```
 
-## Adding a New Scheduler
+**Behaviour:** each entity receives `total_resources / num_connected` Hz.
 
-1. Create a new file in `metalore/core/schedulers/`
-2. Subclass `Scheduler` and implement `share()`
-3. Register it in your config
+
+## Adding a new scheduler
+
+Subclass `Scheduler` and implement `share()`:
 
 ```python
 from metalore.core.schedulers.base import Scheduler
+from metalore.core.entities.base_station import BaseStation
+from typing import List
 
-class ProportionalFair(Scheduler):
+class MyScheduler(Scheduler):
 
-    def share(self, bs, conns, total_resources):
-        # Your allocation logic here
-        # Must return a list of floats, one per entity
-        ...
+    def share(self, bs: BaseStation, conns: List, total_resources: float) -> List[float]:
+        allocations = []
+        for entity in conns:
+            allocations.append(...)
+        return allocations
 ```
+
+If your scheduler is stateful, override `reset()` and call `super().reset()` first:
+
+```python
+    def reset(self) -> None:
+        super().reset()
+        self.my_state.clear()
+```
+
+Register it in the config:
+
+```python
+config['environment']['scheduler_ue'] = MyScheduler
+config['environment']['scheduler_sensor'] = MyScheduler
+```
+
+The environment maintains separate scheduler instances for UEs and sensors (`scheduler_ue`, `scheduler_sensor`). The environment will instantiate each with `env_params`.

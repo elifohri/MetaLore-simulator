@@ -5,8 +5,7 @@ Abstract base class that defines the interface for resource scheduling.
 """
 
 from abc import abstractmethod
-from typing import Dict, List, Tuple
-
+from typing import List
 import numpy as np
 
 from metalore.core.entities.base_station import BaseStation

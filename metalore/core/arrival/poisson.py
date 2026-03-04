@@ -42,9 +42,9 @@ class PoissonArrival(Arrival):
 
         # Scale so that the last arrival falls before ep_time
         if raw_arrivals[-1] > 0:
-            raw_arrivals = raw_arrivals / raw_arrivals[-1] * (self.ep_time - 1)
+            raw_arrivals = raw_arrivals / raw_arrivals[-1] * (self.ep_max_time - 1)
 
-        arrival_times = np.clip(np.floor(raw_arrivals).astype(int), 0, self.ep_time - 1)
+        arrival_times = np.clip(np.floor(raw_arrivals).astype(int), 0, self.ep_max_time - 1)
 
         for entity, stime in zip(entities.values(), arrival_times):
             entity.stime = int(stime)
@@ -55,11 +55,11 @@ class PoissonArrival(Arrival):
 
         # Generate durations from exponential distribution, at least 1 step
         durations = self.rng.exponential(self.mean_duration, size=num)
-        durations = np.clip(np.floor(durations).astype(int), 1, self.ep_time)
+        durations = np.clip(np.floor(durations).astype(int), 1, self.ep_max_time)
 
         entity_list = list(entities.values())
         arrival_times = np.array([e.stime for e in entity_list])
-        departure_times = np.minimum(arrival_times + durations, self.ep_time)
+        departure_times = np.minimum(arrival_times + durations, self.ep_max_time)
 
         # Enforce min_active constraint
         arrival_times, departure_times = self._enforce_min_active(arrival_times, departure_times)
@@ -73,7 +73,7 @@ class PoissonArrival(Arrival):
         arrivals = arrivals.copy()
         departures = departures.copy()
 
-        for t in range(self.ep_time):
+        for t in range(self.ep_max_time):
             active = np.sum((arrivals <= t) & (departures > t))
             if active >= self.min_active_users:
                 continue
@@ -85,6 +85,6 @@ class PoissonArrival(Arrival):
                 arrivals[idx] = t
                 # Ensure they stay at least 1 step
                 if departures[idx] <= t:
-                    departures[idx] = min(t + 1, self.ep_time)
+                    departures[idx] = min(t + 1, self.ep_max_time)
 
         return arrivals, departures

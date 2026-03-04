@@ -72,6 +72,23 @@ class Channel:
             True if SNR exceeds entity's minimum threshold
         """
         return self.snr(bs, entity) > entity.snr_threshold
+    
+    @classmethod
+    def datarate(cls, entity, snr: float, bandwidth: float) -> float:
+        """
+        Calculate data rate using Shannon capacity formula.
+
+        Args:
+            entity: UE or sensor
+            snr: Signal-to-noise ratio
+            bandwidth: Allocated bandwidth in Hz
+
+        Returns:
+            Data rate in Mbps
+        """
+        if snr > entity.snr_threshold and bandwidth != 0:
+            return bandwidth * np.log2(1 + snr) / 1e6         # Convert to Mbps
+        return 0.0
 
     def isoline(self, bs: BaseStation, entity_class, entity_config: Dict, map_bounds: Tuple[float, float], dthresh: float, num: int = 32) -> Tuple:
         """
@@ -123,23 +140,6 @@ class Channel:
 
         xs, ys = zip(*isoline)
         return xs, ys
-
-    @classmethod
-    def datarate(cls, entity, snr: float, bandwidth: float) -> float:
-        """
-        Calculate data rate using Shannon capacity formula.
-
-        Args:
-            entity: UE or sensor
-            snr: Signal-to-noise ratio
-            bandwidth: Allocated bandwidth in Hz
-
-        Returns:
-            Data rate in Mbps
-        """
-        if snr > entity.snr_threshold and bandwidth != 0:
-            return bandwidth * np.log2(1 + snr) / 1e6         # Convert to Mbps
-        return 0.0
 
     @classmethod
     def boundary_collision(cls, theta: float, x0: float, y0: float, width: float, height: float) -> Tuple[float, float]:

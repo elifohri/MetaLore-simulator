@@ -72,23 +72,13 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 
     "job_ue": {
         "generation_probability": 0.7,          # Probability of generating job per timestep
-        "data_size_mean": 70.0,                 # Mean job data size in units
-        "data_size_std": 10.0,                  # Std deviation of job data size
-        "compute_size_mean": 7.0,               # Mean computation requirement
-        "compute_size_std": 1.0,                # Std deviation of computation
-    },
-    
-    "job_sensor": {
-        "data_size_mean": 50.0,                 # Mean sensor data size in units
-        "data_size_std": 5.0,                   # Std deviation
-        "compute_size_mean": 6.0,               # Mean computation requirement
-        "compute_size_std": 0.5,                # Std deviation
+        "data_size_mean": 170.0,                # Mean job data size in bits
+        "compute_size_mean": 70.0,              # Mean computation requirement in CPU cycles
     },
 
-    "channel": {
-        "model": "okumura_hata",                # Channel model type
-        "environment": "urban",                 # urban, suburban, rural
-        "shadowing_std": 8.0,                   # Shadowing standard deviation in dB
+    "job_sensor": {
+        "data_size_mean": 50.0,                 # Mean sensor data size in bits
+        "compute_size_mean": 6.0,               # Mean computation requirement in CPU cycles
     },
 
     "scheduler": {

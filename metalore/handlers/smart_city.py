@@ -15,8 +15,6 @@ from metalore.handlers.handler import Handler
 
 class SmartCityHandler(Handler):
 
-    features = ["queue_lengths"]
-
     @classmethod
     def action_space(cls, env) -> spaces.Space:
         """Define continuous action space for bandwidth allocation and computational power allocation"""
@@ -35,7 +33,7 @@ class SmartCityHandler(Handler):
 
     @classmethod
     def action(cls, env, actions) -> Tuple[float, float]:
-        """Process agent action into environment action. Returns (bandwidth_allocation, compute_allocation)."""
+        """Process agent action into environment action."""
         return (
             float(np.clip(actions[0], 0.0, 1.0)),
             float(np.clip(actions[1], 0.0, 1.0)),
@@ -44,7 +42,9 @@ class SmartCityHandler(Handler):
     @classmethod
     def observation(cls, env) -> np.ndarray:
         """Computes observations for agent."""
-        return np.array([0.0, 0.0], dtype=np.float32)
+        ue_pending = sum(bs.proc_queues['UE'].length for bs in env.stations.values())
+        sensor_pending = sum(bs.proc_queues['SENSOR'].length for bs in env.stations.values())
+        return np.array([float(ue_pending), float(sensor_pending)], dtype=np.float32)
 
     @classmethod
     def reward(cls, env) -> float:

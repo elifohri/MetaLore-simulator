@@ -11,7 +11,7 @@ from metalore.core.arrival import NoDeparture, PoissonArrival
 # ---------------------------------------------------------------------------
 
 SHARED_KWARGS = {
-    "ep_time": 100,
+    "ep_max_time": 100,
     "seed": 42,
     "reset_rng_episode": True,
 }
@@ -49,11 +49,11 @@ class TestNoDeparture:
         entities = make_entities(10)
         self.pattern.departure(entities)
         for e in entities.values():
-            assert e.extime == SHARED_KWARGS["ep_time"]
+            assert e.extime == SHARED_KWARGS["ep_max_time"]
 
     def test_all_entities_active_entire_episode(self):
         """Every entity satisfies stime <= t < extime for all t in [0, ep_time)."""
-        ep_time = SHARED_KWARGS["ep_time"]
+        ep_time = SHARED_KWARGS["ep_max_time"]
         entities = make_entities(5)
         self.pattern.arrival(entities)
         self.pattern.departure(entities)
@@ -112,7 +112,7 @@ class TestPoissonArrival:
 
     def test_arrival_within_episode(self):
         _, entities = self._make()
-        ep = SHARED_KWARGS["ep_time"]
+        ep = SHARED_KWARGS["ep_max_time"]
         for e in entities.values():
             assert 0 <= e.stime < ep
             assert 0 < e.extime <= ep
@@ -131,7 +131,7 @@ class TestPoissonArrival:
         arrivals, departures = self._times(entities)
         arr = np.array(arrivals)
         dep = np.array(departures)
-        for t in range(SHARED_KWARGS["ep_time"]):
+        for t in range(SHARED_KWARGS["ep_max_time"]):
             active = int(np.sum((arr <= t) & (dep > t)))
             assert active >= 3, f"Only {active} active at t={t}"
 
@@ -140,7 +140,7 @@ class TestPoissonArrival:
         arrivals, departures = self._times(entities)
         arr = np.array(arrivals)
         dep = np.array(departures)
-        for t in range(SHARED_KWARGS["ep_time"]):
+        for t in range(SHARED_KWARGS["ep_max_time"]):
             active = int(np.sum((arr <= t) & (dep > t)))
             assert active >= 1, f"Zero active at t={t}"
 
@@ -175,7 +175,7 @@ class TestPoissonArrival:
         assert e.extime > e.stime
 
     def test_short_episode(self):
-        _, entities = self._make(num_entities=5, ep_time=5, mean_duration=2)
+        _, entities = self._make(num_entities=5, ep_max_time=5, mean_duration=2)
         for e in entities.values():
             assert 0 <= e.stime < 5
             assert e.stime < e.extime <= 5
@@ -184,7 +184,7 @@ class TestPoissonArrival:
         """With a very high arrival rate most entities arrive early."""
         _, entities = self._make(num_entities=20, arrival_rate=10.0)
         arrivals = [e.stime for e in entities.values()]
-        mid = SHARED_KWARGS["ep_time"] // 2
+        mid = SHARED_KWARGS["ep_max_time"] // 2
         early = sum(1 for a in arrivals[:10] if a < mid)
         assert early >= 5, "High arrival rate should cluster arrivals early"
 
@@ -196,6 +196,6 @@ class TestPoissonArrival:
         dep = np.array(departures)
         counts = [
             int(np.sum((arr <= t) & (dep > t)))
-            for t in range(SHARED_KWARGS["ep_time"])
+            for t in range(SHARED_KWARGS["ep_max_time"])
         ]
         assert max(counts) > min(counts), "Active count should vary over time"

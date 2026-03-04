@@ -5,6 +5,7 @@ This is the core Gymnasium-compatible environment that provides the basic simula
 """
 
 from collections import defaultdict
+from itertools import chain
 from typing import Dict, List, Tuple
 
 import gymnasium
@@ -14,6 +15,7 @@ from metalore.config.default import default_config, merge_config
 from metalore.core.entities.base_station import BaseStation
 from metalore.core.entities.user_equipment import UserEquipment
 from metalore.core.entities.sensor import Sensor
+from metalore.core.jobs import JobGenerator, JobTracker, transmit, process
 from metalore.core.metrics import MetricsTracker
 from metalore.utils.utility import BoundedLogUtility
 from metalore.visualization.renderer import Renderer
@@ -51,7 +53,7 @@ class MetaLoreEnv(gymnasium.Env):
             'width': self.width,
             'height': self.height,
             'seed': self.seed,
-            'ep_time': self.EP_MAX_TIME,
+            'ep_max_time': self.EP_MAX_TIME,
             'reset_rng_episode': self.reset_rng_episode,
         }
 
@@ -85,8 +87,6 @@ class MetaLoreEnv(gymnasium.Env):
         # Datarates and utilities of entities
         self.datarates_ue: Dict[Tuple[BaseStation, UserEquipment], float] = {}
         self.datarates_sensor: Dict[Tuple[BaseStation, Sensor], float] = {}
-        self.macro_ue: Dict[UserEquipment, float] = {}
-        self.macro_sensor: Dict[Sensor, float] = {}
         self.utilities_ue: Dict[UserEquipment, float] = {}
         self.utilities_sensor: Dict[Sensor, float] = {}
 
@@ -103,6 +103,14 @@ class MetaLoreEnv(gymnasium.Env):
         self.utility = BoundedLogUtility()
         self.metrics = MetricsTracker()
         self.renderer = Renderer(self.utility.lower, self.utility.upper)
+
+        # Job parameters
+        job_config = {
+            'UE':     config['job_ue'],
+            'SENSOR': config['job_sensor'],
+        }
+        self.job_generator = JobGenerator(**env_params, job_configs=job_config)
+        self.job_tracker = JobTracker()
 
         # Handler (defines action/observation/reward)
         self.handler = env_config['handler']
@@ -126,7 +134,7 @@ class MetaLoreEnv(gymnasium.Env):
             self.rng = np.random.default_rng(self.seed)
 
         # Reset time
-        self.time = 0.0
+        self.time = 0
 
         # Reset all components
         self.arrival_ue.reset()
@@ -140,32 +148,37 @@ class MetaLoreEnv(gymnasium.Env):
         self.utility.reset()
         self.metrics.reset()
 
-        # Generate new arrival and departure times
-        for ue in self.users.values():
-            ue.stime = self.arrival_ue.arrival(ue)
-            ue.extime = self.arrival_ue.departure(ue)
-
-        for sensor in self.sensors.values():
-            sensor.stime = self.arrival_sensor.arrival(sensor)
-            sensor.extime = self.arrival_sensor.departure(sensor)
+        # Reset job generator, queues and tracker
+        self.job_generator.reset()
+        self.job_tracker.reset()
+        for entity in chain(self.users.values(), self.sensors.values()):
+            entity.reset_queue()
+        for bs in self.stations.values():
+            bs.reset_queue()
 
         # Generate initial positions
         self.assign_initial_positions(self.users)
         self.assign_initial_positions(self.sensors)
 
-        # Initially not all UEs request downlink connections (service)
+        # Generate new arrival and departure times
+        self.arrival_ue.arrival(self.users)
+        self.arrival_ue.departure(self.users)
+        self.arrival_sensor.arrival(self.sensors)
+        self.arrival_sensor.departure(self.sensors)
+
+        # Initially not all UEs request uplink connections (service)
         self.active_ues = sorted([ue for ue in self.users.values() if ue.stime <= 0], key=lambda ue: ue.id)
         self.active_sensors = sorted([sensor for sensor in self.sensors.values() if sensor.stime <= 0], key=lambda sensor: sensor.id)
 
-        # Establish initial connections
-        self.association.update_association(self.stations, self.users, self.sensors)
+        # Establish initial associations and connections (only active entities)
+        active_users = {ue.id: ue for ue in self.active_ues}
+        active_sensors = {s.id: s for s in self.active_sensors}
+        self.association.update_association(self.stations, active_users, active_sensors)
         self.validate_connections()
 
         # Reset datarates and utilities
         self.datarates_ue = defaultdict(float)
         self.datarates_sensor = defaultdict(float)
-        self.macro_ue = {}
-        self.macro_sensor = {}
         self.utilities_ue = {}
         self.utilities_sensor = {}
 
@@ -187,25 +200,53 @@ class MetaLoreEnv(gymnasium.Env):
         """Take an action in the environment."""
         assert not self.time_is_up, "step() called on terminated episode"
 
-        # Update connections
-        self.association.update_association(self.stations, self.users, self.sensors)
+        # Update connections (only active entities)
+        active_users = {ue.id: ue for ue in self.active_ues}
+        active_sensors = {s.id: s for s in self.active_sensors}
+        self.association.update_association(self.stations, active_users, active_sensors)
         self.validate_connections()
 
         # Apply action and allocate bandwidth among entities
         bw_split, comp_split = self.handler.action(self, actions)
         self.allocate_bandwidth(bw_split)
 
-        # Aggregate per-BS rates into total rate per entity
-        self.macro_ue = self.macro_datarates(self.datarates_ue)
-        self.macro_sensor = self.macro_datarates(self.datarates_sensor)
-
         ###################################
-        # TRANSFER AND COMPUTE LOGIC HERE
+        # TRANSFER AND PROCESSING LOGIC
+        ###################################
+
+        # 1. Begin tracking this step's job events
+        self.job_tracker.begin_step()
+
+        # 2. Generate new jobs for all active entities
+        for ue in self.active_ues:
+            if self.job_generator.should_generate(ue.DEVICE_TYPE):
+                job = self.job_generator.generate(ue, self.time)
+                self.job_tracker.on_generated(job)
+
+        for sensor in self.active_sensors:
+            job =self.job_generator.generate(sensor, self.time) 
+            self.job_tracker.on_generated(job)
+
+        # 3. Transmit from entity tx queues → move completed jobs to BS proc queues
+        for (bs, entity), rate in chain(self.datarates_ue.items(), self.datarates_sensor.items()):
+            bits_sent, done = transmit(entity.tx_queue, rate, timestep=self.time)
+            self.job_tracker.on_transmitted(done, bits_sent)
+            for job in done:
+                bs.proc_queues[job.entity_type].enqueue(job)
+
+        # 4. Process jobs at MEC servers (comp_split divides compute between UE and sensor jobs)
+        for bs in self.stations.values():
+            cycles, done = process(bs.proc_queues[UserEquipment.DEVICE_TYPE], bs.compute_capacity * comp_split, timestep=self.time)
+            self.job_tracker.on_processed(done, cycles)
+
+            cycles, done = process(bs.proc_queues[Sensor.DEVICE_TYPE], bs.compute_capacity * (1 - comp_split), timestep=self.time)
+            self.job_tracker.on_processed(done, cycles)
+
         ###################################
 
         # Compute scaled utilities from entities data rates (range [-1, 1])
-        self.utilities_ue = {ue: self.utility.scale(self.utility.utility(self.macro_ue[ue])) for ue in self.active_ues}
-        self.utilities_sensor = {sensor: self.utility.scale(self.utility.utility(self.macro_sensor[sensor])) for sensor in self.active_sensors}
+        self.utilities_ue = {ue: self.utility.scale(self.utility.utility(rate)) for (_, ue), rate in self.datarates_ue.items()}
+        self.utilities_sensor = {sensor: self.utility.scale(self.utility.utility(rate)) for (_, sensor), rate in self.datarates_sensor.items()}
 
         # Compute step outputs
         reward = self.handler.reward(self)
@@ -215,18 +256,22 @@ class MetaLoreEnv(gymnasium.Env):
         # Record metrics for this timestep
         self.metrics.record(self, bw_split, comp_split, reward, observation)
 
-        # Update positions via movement model
-        for ue in self.users.values():
+        # Update positions via movement model (only active entities)
+        for ue in self.active_ues:
             ue.position = self.movement_ue.move(ue)
-        for sensor in self.sensors.values():
+        for sensor in self.active_sensors:
             sensor.position = self.movement_sensor.move(sensor)
 
         # Terminate existing connections for exiting entities (if mobile)
         leaving_ues = {ue for ue in self.active_ues if ue.extime <= self.time}
+        for ue in leaving_ues:
+            ue.reset_queue()    # discard unfinished jobs for departed UEs
         for bs, ues in self.connections_ue.items():
             self.connections_ue[bs] = ues - leaving_ues
 
         leaving_sensors = {sensor for sensor in self.active_sensors if sensor.extime <= self.time}
+        for sensor in leaving_sensors:
+            sensor.reset_queue()     # discard unfinished jobs for departed sensors
         for bs, sensors in self.connections_sensor.items():
             self.connections_sensor[bs] = sensors - leaving_sensors
 
@@ -245,7 +290,9 @@ class MetaLoreEnv(gymnasium.Env):
 
         return observation, reward, terminated, truncated, info
     
-    
+
+    # --- Entity Creation ---
+
     @staticmethod
     def create_stations(station_positions, bs_config) -> List[BaseStation]:
         """Create base stations from positions and config."""
@@ -266,14 +313,6 @@ class MetaLoreEnv(gymnasium.Env):
         """Generate random initial positions for a set of entities."""
         for entity in entities.values():
             entity.position = (self.rng.uniform(0, self.width), self.rng.uniform(0, self.height))
-
-    @staticmethod
-    def macro_datarates(datarates: Dict) -> Dict:
-        """Sum datarates across all BSs for each entity."""
-        macro = defaultdict(float)
-        for (_, entity), rate in datarates.items():
-            macro[entity] += rate
-        return dict(macro)
 
     # --- Connection Properties ---
 

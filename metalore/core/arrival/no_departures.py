@@ -2,7 +2,7 @@
 No Departure Arrival Pattern for MetaLore.
 
 All entities are active from the start and never depart.
-This is the default/simplest arrival pattern.
+This is the default and simplest arrival pattern.
 """
 
 from typing import Dict
@@ -23,4 +23,4 @@ class NoDeparture(Arrival):
     def departure(self, entities: Dict) -> None:
         """All entities stay until episode ends."""
         for entity in entities.values():
-            entity.extime = self.ep_time
+            entity.extime = self.ep_max_time

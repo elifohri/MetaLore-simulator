@@ -4,7 +4,9 @@ Base Station - Cellular tower with Mobile Edge Computing (MEC).
 Base stations provide wireless connectivity and edge computing resources.
 """
 
-from typing import Tuple
+from typing import Dict, Tuple
+
+from metalore.core.jobs.queue import ProcessQueue
 
 
 class BaseStation:
@@ -26,8 +28,14 @@ class BaseStation:
         self._frequency = frequency                  # in MHz
         self._tx_power = tx_power                    # in dBm
         self._compute_capacity = compute_capacity    # in units (CPU cycles per second)
-        
-        
+
+        # MEC processing queues for UEs and sensors
+        self.proc_queues: Dict[str, ProcessQueue] = {
+            'UE': ProcessQueue(),
+            'SENSOR': ProcessQueue(),
+        }
+
+
     # --- Identity ---
 
     @property
@@ -55,7 +63,7 @@ class BaseStation:
     
     @property
     def bandwidth(self) -> float:
-        """Bandwidth in Hz."""
+        """Bandwidth in MHz."""
         return self._bandwidth
     
     @property
@@ -73,6 +81,11 @@ class BaseStation:
         """Compute capacity in units."""
         return self._compute_capacity
     
+    def reset_queue(self) -> None:
+        """Clear all processing queues for a new episode."""
+        for queue in self.proc_queues.values():
+            queue.clear()
+
     def __str__(self) -> str:
         return f"BaseStation(id={self._id})"
     
