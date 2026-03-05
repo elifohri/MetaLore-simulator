@@ -81,6 +81,9 @@ class MetricsTracker:
             "jobs_processed": [],
             "bits_transmitted": [],
             "cycles_processed": [],
+            # Age metrics (mean over UE jobs processed this step, None if no jobs)
+            "mean_aori": [],
+            "mean_aosi": [],
         }
 
     def record(self, env, bw_split: float, comp_split: float, reward: float, observation) -> None:
@@ -174,6 +177,14 @@ class MetricsTracker:
         self.jobs["jobs_processed"].append(env.job_tracker.step_processed)
         self.jobs["bits_transmitted"].append(env.job_tracker.step_bits_transmitted)
         self.jobs["cycles_processed"].append(env.job_tracker.step_cycles_processed)
+
+        step_ue_jobs = [
+            job for job in env.job_tracker._jobs
+            if job.entity_type == 'UE' and job.proc_end_at == env.time
+        ]
+        n = len(step_ue_jobs)
+        self.jobs["mean_aori"].append(sum(job.aori for job in step_ue_jobs) / n if n > 0 else None)
+        self.jobs["mean_aosi"].append(sum(job.aosi for job in step_ue_jobs) / n if n > 0 else None)
 
     def summary(self, job_tracker) -> Dict:
         """Return episode-level aggregate statistics.

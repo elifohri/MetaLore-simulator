@@ -58,7 +58,6 @@ class JobTracker:
         self._jobs: List[Job] = []
 
         # Latest fully processed sensor job per sensor (sensor_id → Job)
-        # Used by processor.py to stamp sensor context on completed UE jobs
         self.sensor_latest_job: Dict[int, Job] = {}
 
     def begin_step(self) -> None:
@@ -109,11 +108,9 @@ class JobTracker:
             self.entity_processed[key] += 1
             self.entity_cycles_processed[key] += job.compute_size
             if job.entity_type == 'UE':
-                # Stamp sensor context from n-1 (UE queue is processed before sensor queue)
                 sensor_job = self.sensor_latest_job.get(job.nearest_sensor_id)
                 if sensor_job is not None:
                     job.sensor_snapshot_at = sensor_job.generated_at
-                    job.is_context_synced = True
             elif job.entity_type == 'SENSOR':
                 self.sensor_latest_job[job.entity_id] = job
 
@@ -137,10 +134,9 @@ class JobTracker:
                 "proc_duration":      job.proc_duration,
                 "nearest_sensor_id":  job.nearest_sensor_id,
                 "sensor_snapshot_at": job.sensor_snapshot_at,
-                "is_context_synced":  job.is_context_synced,
                 "aoi":                job.proc_end_at - job.sensor_snapshot_at if job.sensor_snapshot_at is not None else None,
-                "aori":               job.total_latency,
-                "aosi":               abs(job.sensor_snapshot_at - job.generated_at) if job.sensor_snapshot_at is not None else None,
+                "aori":               job.aori,
+                "aosi":               job.aosi,
             }
             for job in self._jobs
         ]

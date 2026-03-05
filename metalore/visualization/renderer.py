@@ -216,8 +216,13 @@ class Renderer:
 
     def render_metrics(self, env, ax: plt.Axes) -> None:
         """Render the info dashboard."""
-        mean_e2e_delay = 0
-        mean_synch_delay = 0
+        aori_series = [v for v in env.metrics.jobs["mean_aori"] if v is not None]
+        aosi_series = [v for v in env.metrics.jobs["mean_aosi"] if v is not None]
+
+        cur_aori = f"{aori_series[-1]:.2f}" if aori_series else "—"
+        cur_aosi = f"{aosi_series[-1]:.2f}" if aosi_series else "—"
+        avg_aori = f"{sum(aori_series)/len(aori_series):.2f}" if aori_series else "—"
+        avg_aosi = f"{sum(aosi_series)/len(aosi_series):.2f}" if aosi_series else "—"
 
         ax.get_xaxis().set_visible(False)
         ax.get_yaxis().set_visible(False)
@@ -228,10 +233,10 @@ class Renderer:
         ax.spines["left"].set_visible(False)
 
         rows = ["Current", "Average"]
-        cols = ["e2e delay", "synch delay"]
+        cols = ["AoRI", "AoSI"]
         text = [
-            [f"{mean_e2e_delay:.2f}", f"{mean_synch_delay:.2f}"],
-            [f"{mean_e2e_delay:.2f}", f"{mean_synch_delay:.2f}"],
+            [cur_aori, cur_aosi],
+            [avg_aori, avg_aosi],
         ]
 
         table = ax.table(

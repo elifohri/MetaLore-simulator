@@ -43,12 +43,8 @@ class Job:
         self.proc_end_at: Optional[int] = None
 
         # Sensor context (UE jobs only)
-        # nearest_sensor_id:  set at generation — which sensor the UE was closest to
-        # sensor_snapshot_at: set at processing — generated_at of that sensor's latest processed job
-        # is_context_synced:  True if a sensor snapshot was available when this job was processed
         self.nearest_sensor_id: Optional[int] = nearest_sensor_id
         self.sensor_snapshot_at: Optional[int] = None
-        self.is_context_synced: bool = False
 
 
     @property
@@ -110,11 +106,18 @@ class Job:
         return self.proc_end_at - self.proc_start_at
 
     @property
-    def total_latency(self) -> Optional[int]:
-        """Total end-to-end latency from generation to processing complete."""
+    def aori(self) -> Optional[int]:
+        """Age of Request Information: end-to-end latency from generation to processing complete."""
         if self.proc_end_at is None:
             return None
         return self.proc_end_at - self._generated_at
+
+    @property
+    def aosi(self) -> Optional[int]:
+        """Age of Sensor Information: sensor data age relative to job birth."""
+        if self.sensor_snapshot_at is None:
+            return None
+        return abs(self.sensor_snapshot_at - self._generated_at)
 
     def __repr__(self) -> str:
         return (

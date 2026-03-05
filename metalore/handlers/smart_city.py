@@ -49,7 +49,32 @@ class SmartCityHandler(Handler):
     @classmethod
     def reward(cls, env) -> float:
         """Computes rewards for agent."""
-        return 1.0  
+        reward_cfg = env.config['reward']
+        delay_threshold = reward_cfg['e2e_delay_threshold']
+        delay_penalty   = reward_cfg['delay_penalty']
+        sync_base_reward = reward_cfg['sync_base_reward']
+        discount_factor  = reward_cfg['discount_factor']
+
+        # UE jobs fully processed this timestep
+        step_ue_jobs = [
+            job for job in env.job_tracker._jobs
+            if job.entity_type == 'UE' and job.proc_end_at == env.time
+        ]
+
+        # Part 1: delay penalty — applied per job that exceeded the e2e threshold
+        reward = sum(
+            delay_penalty
+            for job in step_ue_jobs
+            if job.aori > delay_threshold
+        )
+
+        # Part 2: sync reward — discounted by how stale the sensor data was at job birth
+        reward += sum(
+            sync_base_reward * (discount_factor ** job.aosi)
+            for job in step_ue_jobs
+        )
+
+        return reward
 
     @classmethod
     def check(cls, env) -> None:

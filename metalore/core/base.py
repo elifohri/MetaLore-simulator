@@ -237,8 +237,12 @@ class MetaLoreEnv(gymnasium.Env):
 
         # 4. Process jobs at MEC servers (comp_split divides compute between UE and sensor jobs)
         for bs in self.stations.values():
-            cycles, done = process(bs.proc_queues[UserEquipment.DEVICE_TYPE], bs.compute_capacity * comp_split, timestep=self.time,
-                                   ready_fn=lambda job: job.nearest_sensor_id is None or self.job_tracker.sensor_latest_job.get(job.nearest_sensor_id) is not None)
+            cycles, done = process(
+                bs.proc_queues[UserEquipment.DEVICE_TYPE],
+                bs.compute_capacity * comp_split,
+                timestep=self.time,
+                ready_fn=lambda job: self.job_tracker.sensor_latest_job.get(job.nearest_sensor_id) is not None,
+            )
             self.job_tracker.on_processed(done, cycles)
 
             cycles, done = process(bs.proc_queues[Sensor.DEVICE_TYPE], bs.compute_capacity * (1 - comp_split), timestep=self.time)
