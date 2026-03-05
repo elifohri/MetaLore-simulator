@@ -65,3 +65,7 @@ class Association:
             if entity in entities:
                 return bs
         return None
+
+    def get_nearest_sensor(self, ue: UserEquipment) -> Optional[Sensor]:
+        """Return the nearest sensor to the given UE, or None if not assigned."""
+        return self.nearest_sensor.get(ue)

@@ -6,13 +6,13 @@ Supports partial processing: a compute-heavy job may span multiple timesteps.
 Completed jobs are returned for tracking.
 """
 
-from typing import List, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from metalore.core.jobs.job import Job
 from metalore.core.jobs.queue import ProcessQueue
 
 
-def process(queue: ProcessQueue, compute_capacity: float, timestep: int) -> Tuple[float, List[Job]]:
+def process(queue: ProcessQueue, compute_capacity: float, timestep: int, ready_fn: Optional[Callable[[Job], bool]] = None) -> Tuple[float, List[Job]]:
     """
     Process jobs from the MEC queue for one timestep.
 
@@ -20,6 +20,8 @@ def process(queue: ProcessQueue, compute_capacity: float, timestep: int) -> Tupl
         queue:            The BS's processing queue (UE or sensor side).
         compute_capacity: Compute rate in CPU cycles/second allocated to this queue.
         timestep:         Current simulation timestep (used for job lifecycle timestamps).
+        ready_fn:         Optional callback — if provided, the head job is only processed
+                          when ready_fn(job) returns True, otherwise processing halts.
 
     Returns:
         cycles_consumed:  Total CPU cycles consumed this timestep.
@@ -32,6 +34,9 @@ def process(queue: ProcessQueue, compute_capacity: float, timestep: int) -> Tupl
 
     while queue.length > 0 and compute_capacity > 0.0:
         job = queue.head()
+
+        if ready_fn is not None and not ready_fn(job):
+            break  # head job is waiting for context; halt until next timestep
 
         if job.proc_start_at is None:
             job.proc_start_at = timestep

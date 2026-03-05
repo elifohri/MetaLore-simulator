@@ -19,6 +19,7 @@ class Job:
         data_size: float,
         compute_size: float,
         generated_at: int,
+        nearest_sensor_id: Optional[int] = None,
     ) -> None:
         self._id = job_id
         self._entity_id = entity_id
@@ -40,6 +41,14 @@ class Job:
         self.tx_end_at: Optional[int] = None
         self.proc_start_at: Optional[int] = None
         self.proc_end_at: Optional[int] = None
+
+        # Sensor context (UE jobs only)
+        # nearest_sensor_id:  set at generation — which sensor the UE was closest to
+        # sensor_snapshot_at: set at processing — generated_at of that sensor's latest processed job
+        # is_context_synced:  True if a sensor snapshot was available when this job was processed
+        self.nearest_sensor_id: Optional[int] = nearest_sensor_id
+        self.sensor_snapshot_at: Optional[int] = None
+        self.is_context_synced: bool = False
 
 
     @property

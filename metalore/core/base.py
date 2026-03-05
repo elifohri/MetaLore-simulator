@@ -220,11 +220,12 @@ class MetaLoreEnv(gymnasium.Env):
         # 2. Generate new jobs for all active entities
         for ue in self.active_ues:
             if self.job_generator.should_generate(ue.DEVICE_TYPE):
-                job = self.job_generator.generate(ue, self.time)
+                nearest_sensor = self.association.get_nearest_sensor(ue)
+                job = self.job_generator.generate(ue, self.time, nearest_sensor_id=nearest_sensor.id if nearest_sensor else None)
                 self.job_tracker.on_generated(job)
 
         for sensor in self.active_sensors:
-            job =self.job_generator.generate(sensor, self.time) 
+            job = self.job_generator.generate(sensor, self.time, nearest_sensor_id=None)
             self.job_tracker.on_generated(job)
 
         # 3. Transmit from entity tx queues → move completed jobs to BS proc queues
@@ -236,7 +237,8 @@ class MetaLoreEnv(gymnasium.Env):
 
         # 4. Process jobs at MEC servers (comp_split divides compute between UE and sensor jobs)
         for bs in self.stations.values():
-            cycles, done = process(bs.proc_queues[UserEquipment.DEVICE_TYPE], bs.compute_capacity * comp_split, timestep=self.time)
+            cycles, done = process(bs.proc_queues[UserEquipment.DEVICE_TYPE], bs.compute_capacity * comp_split, timestep=self.time,
+                                   ready_fn=lambda job: job.nearest_sensor_id is None or self.job_tracker.sensor_latest_job.get(job.nearest_sensor_id) is not None)
             self.job_tracker.on_processed(done, cycles)
 
             cycles, done = process(bs.proc_queues[Sensor.DEVICE_TYPE], bs.compute_capacity * (1 - comp_split), timestep=self.time)

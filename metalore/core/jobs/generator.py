@@ -53,8 +53,8 @@ class JobGenerator:
         """Draw a Poisson sample, clamped to a minimum of 1."""
         return float(max(self.rng.poisson(lam=lam), 1.0))
 
-    def generate(self, entity, timestep: int) -> Job:
-        """Construct a Job for an entity, enqueue it in the entity's tx_queue, and return it."""
+    def generate(self, entity, timestep: int, nearest_sensor_id: int = None) -> Job:
+        """Construct a Job for an entity, enqueue it in the entity's tx_queue and return it."""
         config = self._configs[entity.DEVICE_TYPE]
         job = Job(
             job_id=self.next_id(),
@@ -63,6 +63,7 @@ class JobGenerator:
             data_size=self.poisson(config['data_size_mean']),
             compute_size=self.poisson(config['compute_size_mean']),
             generated_at=timestep,
+            nearest_sensor_id=nearest_sensor_id
         )
         entity.tx_queue.enqueue(job)
         return job
