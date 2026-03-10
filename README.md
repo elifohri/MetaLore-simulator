@@ -11,7 +11,7 @@ Built upon the [`mobile-env`](https://github.com/stefanbschneider/mobile-env) fr
 
 ## Overview
 
-In a smart city, mobile User Equipments (UEs) generate tasks that must be offloaded to a nearby MEC server (hosted at a Base Station) for processing. At the same time, IoT sensors continuously collect environmental data used to maintain a live **digital twin** of the physical world. Before a UE's job can be processed, the MEC server must first have the relevant, up-to-date sensor data — a constraint that captures the synchronization dependency between UEs and the sensors observing them.
+In a smart city, mobile User Equipments (UEs) generate tasks that must be offloaded to a nearby MEC server (hosted at a Base Station) for processing. At the same time, IoT sensors continuously collect environmental data used to maintain a live **digital twin** of the physical world. Before a UE's job can be processed, the MEC server must have the relevant, up-to-date sensor data.
 
 MetaLore simulates this system end-to-end:
 
@@ -22,7 +22,7 @@ MetaLore simulates this system end-to-end:
 - The reward function penalizes latency and rewards fresh, synchronized data delivery.
 
 <center>
-  <img src="Metalore.png" alt="Description" width="600">
+  <img src="MetaLore.png" alt="Description" width="600">
 </center>
 
 ### Key Research Concepts
@@ -50,7 +50,6 @@ pip install -e .
 
 **Dependencies:** `gymnasium`, `numpy`, `pandas`, `matplotlib`, `pygame`
 
----
 
 ## Quick Start
 
@@ -136,7 +135,9 @@ If you use `MetaLore` simulator in your work, please cite our paper: [paper in P
 ### How to contribute:
 
 **1. Fork the Repository:** Start by creating a fork of this repository to your GitHub account.
+
 **2. Create a Feature Branch:** Work on your changes in a dedicated feature branch to keep development organized.
+
 **3. Submit a Pull Request (PR):** Once your changes are ready, submit a PR describing the enhancement, fix or addition.
 
 We value well-documented and tested contributions that align with the project's goals and coding standards.
