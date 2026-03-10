@@ -72,13 +72,13 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 
     "job_ue": {
         "generation_probability": 0.7,          # Probability of generating job per timestep
-        "data_size_mean": 170.0,                # Mean job data size in bits
-        "compute_size_mean": 70.0,              # Mean computation requirement in CPU cycles
+        "data_size_mean": 200.0,                # Mean job data size in bits
+        "compute_size_mean": 50.0,              # Mean computation requirement in CPU cycles
     },
 
     "job_sensor": {
-        "data_size_mean": 50.0,                 # Mean sensor data size in bits
-        "compute_size_mean": 6.0,               # Mean computation requirement in CPU cycles
+        "data_size_mean": 150.0,                 # Mean sensor data size in bits
+        "compute_size_mean": 50.0,               # Mean computation requirement in CPU cycles
     },
 
     "scheduler": {

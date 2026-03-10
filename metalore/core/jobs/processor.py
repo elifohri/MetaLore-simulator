@@ -36,7 +36,7 @@ def process(queue: ProcessQueue, compute_capacity: float, timestep: int, ready_f
         job = queue.head()
 
         if ready_fn is not None and not ready_fn(job):
-            break  # head job is waiting for context; halt until next timestep
+            break  # head job is waiting for context, halt until next timestep
 
         if job.proc_start_at is None:
             job.proc_start_at = timestep
