@@ -1,6 +1,6 @@
 # MetaLore: Learning to Orchestrate the Metaverse
 
-![Python](https://img.shields.io/badge/python-3.10+-blue)
+![Python](https://img.shields.io/badge/python-3.9+-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![Status](https://img.shields.io/badge/status-in--development-yellow)
 
@@ -42,13 +42,17 @@ MetaLore was developed as part of an ongoing PhD research project focused on rea
 
 ## Installation
 
+**Prerequisites:** Python 3.9+ and pip must be installed on your system. If you don't have Python, download it from [python.org](https://www.python.org/downloads/) or install it via your package manager (e.g. `brew install python` on macOS, `apt install python3` on Ubuntu).
+
 ```bash
 git clone https://github.com/elifohri/MetaLore-simulator
 cd MetaLore
 pip install -e .
 ```
 
-**Dependencies:** `gymnasium`, `numpy`, `pandas`, `matplotlib`, `pygame`
+**Dependencies:** `gymnasium`, `numpy`, `pandas`, `matplotlib`, `pygame`, `shapely`, `svgpath2mpl`
+
+> To run the example notebooks, also install Jupyter: `pip install jupyter`
 
 
 ## Quick Start

@@ -19,7 +19,7 @@ requirements = [
 ]
 
 setup(
-    name="mobile-env",
+    name="MetaLore",
     version="2.0.1",
     author="Elif Ebru Ohri",
     description="MetaLore: DRL simulation environment for joint communication and computation resoruce allocation.",

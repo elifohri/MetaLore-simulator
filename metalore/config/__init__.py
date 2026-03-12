@@ -4,6 +4,5 @@ from metalore.config.default import (
     small_config, 
     large_config, 
     multi_cell_config, 
-    dynamic_traffic_config, 
     mobile_sensor_config,
 )

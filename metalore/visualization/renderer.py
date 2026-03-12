@@ -75,8 +75,8 @@ class Renderer:
         plt.close(fig)
 
         if mode == "rgb_array" or mode is None:
-            data = np.frombuffer(canvas.tostring_rgb(), dtype=np.uint8)
-            return data.reshape(canvas.get_width_height()[::-1] + (3,))
+            data = np.frombuffer(canvas.buffer_rgba(), dtype=np.uint8)
+            return data.reshape(canvas.get_width_height()[::-1] + (4,))[..., :3]
 
         elif mode == "human":
             data = canvas.buffer_rgba()
