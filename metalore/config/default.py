@@ -8,7 +8,6 @@ from copy import deepcopy
 from metalore.core.movement.random_waypoint import RandomWaypointMovement
 from metalore.core.movement.static import StaticMovement
 from metalore.core.arrival.no_departures import NoDeparture
-from metalore.core.arrival.poisson import PoissonArrival
 from metalore.core.channels.okumura_hata import OkumuraHata
 from metalore.core.association.closest import ClosestAssociation
 from metalore.core.schedulers.resource_fair import ResourceFair
@@ -176,15 +175,6 @@ def mobile_sensor_config() -> Dict[str, Any]:
     config['environment']['num_sensors'] = 5
     config['environment']['movement_sensor'] = RandomWaypointMovement
     config['sensor']['velocity'] = 1.0
-    return config
-
-
-def dynamic_traffic_config() -> Dict[str, Any]:
-    """Configuration with dynamic UE arrivals and departures using a Poisson process."""
-    config = default_config()
-    config['environment']['num_ues'] = 50
-    config['environment']['num_sensors'] = 5
-    config['environment']['arrival_ue'] = PoissonArrival
     return config
 
 
