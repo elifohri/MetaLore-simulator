@@ -5,17 +5,6 @@ Models the full lifecycle of a computation task from generation at an edge devic
 
 ## Job Lifecycle
 
-```
-Entity          Wireless Channel        Base Station (MEC)
-  │                    │                       │
-  │── generate() ──►  Job created              │
-  │                    │                       │
-  │   [TxQueue]        │                       │
-  │── transmit() ──────────────────────────►   │
-  │                                    [ProcessQueue]
-  │                                ──── process() ──► done
-```
-
 Each job passes through two sequential phases:
 
 1. **Transmission** — sent from the entity's `TxQueue` over the wireless channel to the BS.
