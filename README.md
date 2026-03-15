@@ -11,7 +11,7 @@ Built upon the [`mobile-env`](https://github.com/stefanbschneider/mobile-env) fr
 
 ## Overview
 
-In a smart city, mobile User Equipments (UEs) generate tasks that must be offloaded to a nearby MEC server (hosted at a Base Station) for processing. At the same time, IoT sensors continuously collect environmental data used to maintain a live **digital twin** of the physical world. Before a UE's job can be processed, the MEC server must have the relevant, up-to-date sensor data.
+In a smart city, mobile User Equipments (UEs) submit service requests that are offloaded to a nearby MEC server (hosted at a Base Station) for processing. At the same time, IoT sensors continuously collect environmental data used to maintain a live **digital twin** of the physical world.
 
 MetaLore simulates this system end-to-end:
 
@@ -19,7 +19,7 @@ MetaLore simulates this system end-to-end:
 - The BS processes jobs using its MEC compute capacity.
 - UE jobs are only processed once the corresponding sensor data has arrived (synchronized processing).
 - An RL agent controls how bandwidth and compute resources are split between UEs and sensors at every timestep.
-- The reward function penalizes latency and rewards fresh, synchronized data delivery.
+- The reward function penalizes service latency and rewards fresh, synchronized sensor data delivery.
 
 <center>
   <img src="MetaLore.png" alt="Description" width="600">
@@ -27,14 +27,15 @@ MetaLore simulates this system end-to-end:
 
 ### Key Research Concepts
 
-MetaLore was developed as part of an ongoing PhD research project focused on real-time synchronization and resource allocation in smart city environments. Using reinforcement learning, the system learns to adaptively manage heterogeneous traffic demands and maintain digital twin synchronization in dynamic network conditions.
+MetaLore was developed as part of an ongoing PhD research project.
+It focuses on real-time synchronization and resource allocation in smart city environments. Using reinforcement learning, the system learns to adaptively manage heterogeneous traffic demands and maintain digital twin synchronization in dynamic network conditions.
 
 
 | Concept | Description |
 |---|---|
-| **Age of Request Information (AoRI)** | End-to-end latency: from job generation at the UE to completion at the MEC server |
-| **Age of Sensor Information (AoSI)** | Staleness of sensor data relative to the time a UE job was generated |
-| **Digital twin synchronization** | Sensors maintain a real-time model of the physical environment for UE job context |
+| **Age of Request Information (AoRI)** | End-to-end latency: from service request generation at the UE to completion at the MEC server |
+| **Age of Sensor Information (AoSI)** | Staleness of sensor data relative to the time a UE service request was generated |
+| **Digital twin synchronization** | Sensors maintain a real-time model of the physical environment for UE service requests |
 | **Multi-Objective Optimization** | Balances throughput, latency and synchronization accuracy through a DRL reward function |
 | **DRL Integration** | Fully compatible with Gymnasium and Stable-Baselines3, with native support for Proximal Policy Optimization (PPO) |
 | **Visualizations & Evaluation Tools** | Built-in tools for monitoring queue dynamics, AoI metrics and policy performance |
