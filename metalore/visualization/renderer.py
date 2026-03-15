@@ -216,13 +216,18 @@ class Renderer:
 
     def render_metrics(self, env, ax: plt.Axes) -> None:
         """Render the info dashboard."""
-        aori_series = [v for v in env.metrics.jobs["mean_aori"] if v is not None]
-        aosi_series = [v for v in env.metrics.jobs["mean_aosi"] if v is not None]
-
-        cur_aori = f"{aori_series[-1]:.2f}" if aori_series else "—"
-        cur_aosi = f"{aosi_series[-1]:.2f}" if aosi_series else "—"
-        avg_aori = f"{sum(aori_series)/len(aori_series):.2f}" if aori_series else "—"
-        avg_aosi = f"{sum(aosi_series)/len(aosi_series):.2f}" if aosi_series else "—"
+        aori_vals, aosi_vals, ue_data, sensor_data = [], [], 0.0, 0.0
+        for job in env.job_tracker.completed_jobs:
+            if job.entity_type == 'UE':
+                if job.aori is not None: aori_vals.append(job.aori)
+                if job.aosi is not None: aosi_vals.append(job.aosi)
+                ue_data += job.data_size
+            else:
+                sensor_data += job.data_size
+        avg_aori = f"{sum(aori_vals)/len(aori_vals):.2f}" if aori_vals else "—"
+        avg_aosi = f"{sum(aosi_vals)/len(aosi_vals):.2f}" if aosi_vals else "—"
+        total_ue = f"{ue_data:.2f}"
+        total_sensor = f"{sensor_data:.2f}"
 
         ax.get_xaxis().set_visible(False)
         ax.get_yaxis().set_visible(False)
@@ -232,28 +237,20 @@ class Renderer:
         ax.spines["right"].set_visible(False)
         ax.spines["left"].set_visible(False)
 
-        rows = ["Current", "Average"]
-        cols = ["AoRI", "AoSI"]
-        text = [
-            [cur_aori, cur_aosi],
-            [avg_aori, avg_aosi],
-        ]
-
         table = ax.table(
-            text,
-            rowLabels=rows,
-            colLabels=cols,
+            [[avg_aori, avg_aosi], [total_ue, total_sensor]],
+            rowLabels=["Avg", "Throughput"],
+            colLabels=["AoRI", "AoSI"],
             cellLoc="center",
             edges="B",
             loc="upper center",
             bbox=[0.0, -0.25, 1.0, 1.25],
         )
         table.auto_set_font_size(False)
-        table.set_fontsize(11)
-
+        table.set_fontsize(10)
 
     def render_bw_allocation(self, env, ax: plt.Axes) -> None:
-        bw_splits = env.metrics.actions['bw_split']
+        bw_splits = env.metrics.step_totals['bw_split']
         time = np.arange(len(bw_splits))
         ax.plot(time, bw_splits, linewidth=1, color="blue", label="UE")
         ax.plot(time, 1 - np.array(bw_splits), linewidth=1, color="green", label="Sensor")
@@ -265,7 +262,7 @@ class Renderer:
         ax.legend(loc="upper right", fontsize=8)
 
     def render_comp_allocation(self, env, ax: plt.Axes) -> None:
-        comp_splits = env.metrics.actions['comp_split']
+        comp_splits = env.metrics.step_totals['comp_split']
         time = np.arange(len(comp_splits))
         ax.plot(time, comp_splits, linewidth=1, color="blue", label="UE")
         ax.plot(time, 1 - np.array(comp_splits), linewidth=1, color="green", label="Sensor")

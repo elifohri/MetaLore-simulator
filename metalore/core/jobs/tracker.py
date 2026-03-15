@@ -2,120 +2,110 @@
 Job Tracker for MetaLore simulation.
 
 Accumulates statistics on job generation, transmission and processing at four levels:
-  - Episode totals
-  - Per-step totals
-  - Per-entity episode totals
-  - Per-entity per-step totals
+  - Episode totals          (ep_totals)
+  - Per-entity episode      (ep_per_entity)
+  - Per-step totals         (step_totals)
+  - Per-entity per-step     (step_per_entity)
 """
 
 import os
-from collections import defaultdict
-from typing import Dict, List, Tuple
-
 import pandas as pd
+from collections import defaultdict
+from dataclasses import dataclass
+from typing import Dict, List, Tuple
 
 from metalore.core.jobs.job import Job
 
+EntityKey = Tuple[str, int]  # (entity_type, entity_id)
+
+
+@dataclass
+class JobCounts:
+    """Aggregated job statistics for one scope (episode or step, global or per-entity)."""
+    jobs_generated: int = 0
+    jobs_transmitted: int = 0
+    jobs_processed: int = 0
+    bits_transmitted: float = 0.0
+    cycles_processed: float = 0.0
+
 
 class JobTracker:
-    """Tracks job statistics at episode, step, entity and entity-per-step levels."""
+    """Tracks job statistics at four levels of granularity."""
 
     def __init__(self) -> None:
         self.reset()
 
     def reset(self) -> None:
         """Clear all counters for a new episode."""
+        self.ep_totals = JobCounts()
+        self.ep_per_entity: Dict[EntityKey, JobCounts] = defaultdict(JobCounts)
 
-        # --- Episode totals ---
-        self.total_generated: int = 0
-        self.total_transmitted: int = 0
-        self.total_processed: int = 0
-        self.total_bits_transmitted: float = 0.0
-        self.total_cycles_processed: float = 0.0
+        self.step_totals = JobCounts()
+        self.step_per_entity: Dict[EntityKey, JobCounts] = defaultdict(JobCounts)
 
-        # --- Per-entity episode totals ---
-        self.entity_generated: Dict[Tuple[str, int], int] = defaultdict(int)
-        self.entity_transmitted: Dict[Tuple[str, int], int] = defaultdict(int)
-        self.entity_processed: Dict[Tuple[str, int], int] = defaultdict(int)
-        self.entity_bits_transmitted: Dict[Tuple[str, int], float] = defaultdict(float)
-        self.entity_cycles_processed: Dict[Tuple[str, int], float] = defaultdict(float)
+        # All fully-processed jobs this episode
+        self.completed_jobs: List[Job] = []
 
-        # --- Per-step totals ---
-        self.step_generated: int = 0
-        self.step_transmitted: int = 0
-        self.step_processed: int = 0
-        self.step_bits_transmitted: float = 0.0
-        self.step_cycles_processed: float = 0.0
+        # Fully-processed jobs this step only
+        self.step_completed_jobs: List[Job] = []
 
-        # --- Per-entity per-step totals ---
-        self.step_entity_generated: Dict[Tuple[str, int], int] = defaultdict(int)
-        self.step_entity_transmitted: Dict[Tuple[str, int], int] = defaultdict(int)
-        self.step_entity_processed: Dict[Tuple[str, int], int] = defaultdict(int)
-        self.step_entity_bits_transmitted: Dict[Tuple[str, int], float] = defaultdict(float)
-        self.step_entity_cycles_processed: Dict[Tuple[str, int], float] = defaultdict(float)
-
-        # All fully processed jobs this episode
-        self._jobs: List[Job] = []
-
-        # Latest fully processed sensor job per sensor (sensor_id → Job)
-        self.sensor_latest_job: Dict[int, Job] = {}
+        # Latest processed sensor job per sensor
+        self.sensor_latest_processed_job: Dict[int, Job] = {}
 
     def begin_step(self) -> None:
         """Reset per-step counters at the start of each timestep."""
-        self.step_generated = 0
-        self.step_transmitted = 0
-        self.step_processed = 0
-        self.step_bits_transmitted = 0.0
-        self.step_cycles_processed = 0.0
-        self.step_entity_generated = defaultdict(int)
-        self.step_entity_transmitted = defaultdict(int)
-        self.step_entity_processed = defaultdict(int)
-        self.step_entity_bits_transmitted = defaultdict(float)
-        self.step_entity_cycles_processed = defaultdict(float)
+        self.step_totals = JobCounts()
+        self.step_per_entity = defaultdict(JobCounts)
+        self.step_completed_jobs = []
 
     def on_generated(self, job: Job) -> None:
         """Record that a job was generated this step."""
         key = (job.entity_type, job.entity_id)
-        self.step_generated += 1
-        self.total_generated += 1
-        self.step_entity_generated[key] += 1
-        self.entity_generated[key] += 1
+        self.step_totals.jobs_generated += 1
+        self.ep_totals.jobs_generated += 1
+        self.step_per_entity[key].jobs_generated += 1
+        self.ep_per_entity[key].jobs_generated += 1
 
-    def on_transmitted(self, jobs: List[Job], bits: float) -> None:
-        """Record that `jobs` were fully transmitted and `bits` were sent."""
-        self.step_transmitted += len(jobs)
-        self.step_bits_transmitted += bits
-        self.total_transmitted += len(jobs)
-        self.total_bits_transmitted += bits
-        for job in jobs:
-            key = (job.entity_type, job.entity_id)
-            self.step_entity_transmitted[key] += 1
-            self.step_entity_bits_transmitted[key] += job.data_size
-            self.entity_transmitted[key] += 1
-            self.entity_bits_transmitted[key] += job.data_size
+    def on_transmitted(self, entity_key: EntityKey, jobs: List[Job], bits: float) -> None:
+        """Record transmission progress for one entity this step."""
+        n = len(jobs)
+        self.step_totals.jobs_transmitted += n
+        self.ep_totals.jobs_transmitted += n
+        self.step_totals.bits_transmitted += bits
+        self.ep_totals.bits_transmitted += bits
+        self.step_per_entity[entity_key].jobs_transmitted += n
+        self.ep_per_entity[entity_key].jobs_transmitted += n
+        self.step_per_entity[entity_key].bits_transmitted += bits
+        self.ep_per_entity[entity_key].bits_transmitted += bits
 
     def on_processed(self, jobs: List[Job], cycles: float) -> None:
-        """Record that `jobs` were fully processed and `cycles` were consumed."""
-        self.step_processed += len(jobs)
-        self.step_cycles_processed += cycles
-        self.total_processed += len(jobs)
-        self.total_cycles_processed += cycles
+        """Record that `jobs` were fully processed consuming `cycles` compute cycles."""
+        n = len(jobs)
+        self.step_totals.jobs_processed += n
+        self.ep_totals.jobs_processed += n
+        self.step_totals.cycles_processed += cycles
+        self.ep_totals.cycles_processed += cycles
+
         for job in jobs:
             key = (job.entity_type, job.entity_id)
-            self._jobs.append(job)
-            self.step_entity_processed[key] += 1
-            self.step_entity_cycles_processed[key] += job.compute_size
-            self.entity_processed[key] += 1
-            self.entity_cycles_processed[key] += job.compute_size
-            if job.entity_type == 'UE':
-                sensor_job = self.sensor_latest_job.get(job.nearest_sensor_id)
-                if sensor_job is not None:
-                    job.sensor_snapshot_at = sensor_job.generated_at
-            elif job.entity_type == 'SENSOR':
-                self.sensor_latest_job[job.entity_id] = job
+            self.completed_jobs.append(job)
+            self.step_completed_jobs.append(job)
+            self.step_per_entity[key].jobs_processed += 1
+            self.ep_per_entity[key].jobs_processed += 1
+            self.step_per_entity[key].cycles_processed += job.compute_size
+            self.ep_per_entity[key].cycles_processed += job.compute_size
+
+    def update_ue_sensor_sync(self, job: Job) -> None:
+        """Update sensor snapshot timestamp on UE jobs; track latest sensor job."""
+        if job.entity_type == 'UE':
+            sensor_job = self.sensor_latest_processed_job.get(job.nearest_sensor_id)
+            if sensor_job is not None:
+                job.sensor_snapshot_at = sensor_job.generated_at
+        elif job.entity_type == 'SENSOR':
+            self.sensor_latest_processed_job[job.entity_id] = job
 
     def to_dataframe(self) -> pd.DataFrame:
-        """Return a DataFrame with one row per job and all lifecycle columns."""
+        """Return a DataFrame with one row per completed job and all lifecycle columns."""
         rows = [
             {
                 "job_id":             job.id,
@@ -134,23 +124,29 @@ class JobTracker:
                 "proc_duration":      job.proc_duration,
                 "nearest_sensor_id":  job.nearest_sensor_id,
                 "sensor_snapshot_at": job.sensor_snapshot_at,
-                "aoi":                job.proc_end_at - job.sensor_snapshot_at if job.sensor_snapshot_at is not None else None,
+                "aoi":                job.aoi,
                 "aori":               job.aori,
                 "aosi":               job.aosi,
             }
-            for job in self._jobs
+            for job in self.completed_jobs
         ]
-        return pd.DataFrame(rows)
+        columns = [
+            "job_id", "entity_id", "entity_type", "data_size", "compute_size",
+            "generated_at", "tx_start_at", "tx_end_at", "proc_start_at", "proc_end_at",
+            "tx_queue_wait", "tx_duration", "proc_queue_wait", "proc_duration",
+            "nearest_sensor_id", "sensor_snapshot_at", "aoi", "aori", "aosi",
+        ]
+        return pd.DataFrame(rows, columns=columns)
 
     def save_log(self, path: str) -> None:
-        """Save the job lifecycle log to a CSV file."""
+        """Save the completed job log to a CSV file."""
         if dir_path := os.path.dirname(path):
             os.makedirs(dir_path, exist_ok=True)
         self.to_dataframe().to_csv(path, index=False)
 
     def __repr__(self) -> str:
         return (
-            f"JobTracker(generated={self.total_generated}, "
-            f"transmitted={self.total_transmitted}, "
-            f"processed={self.total_processed})"
+            f"JobTracker(ep_jobs_generated={self.ep_totals.jobs_generated}, "
+            f"ep_jobs_transmitted={self.ep_totals.jobs_transmitted}, "
+            f"ep_jobs_processed={self.ep_totals.jobs_processed})"
         )

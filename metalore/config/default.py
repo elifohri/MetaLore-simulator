@@ -44,7 +44,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "frequency": 3500,                      # Carrier frequency in MHz (3.5 GHz)
         "tx_power": 40,                         # Transmission power in dBm
         "height": 40,                           # Antenna height in meters
-        "compute_capacity": 1e9,                # MEC capacity in CPU cycles/second
+        "compute_capacity": 100,                # MEC capacity in CPU cycles/second
     },
 
     "ue": {
@@ -71,13 +71,13 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 
     "job_ue": {
         "generation_probability": 0.7,          # Probability of generating job per timestep
-        "data_size_mean": 200.0,                # Mean job data size in bits
-        "compute_size_mean": 50.0,              # Mean computation requirement in CPU cycles
+        "data_size_mean": 100.0,                # Mean job data size in bits
+        "compute_size_mean": 10.0,              # Mean computation requirement in CPU cycles
     },
 
     "job_sensor": {
-        "data_size_mean": 150.0,                 # Mean sensor data size in bits
-        "compute_size_mean": 50.0,               # Mean computation requirement in CPU cycles
+        "data_size_mean": 70.0,                 # Mean sensor data size in bits
+        "compute_size_mean": 7.0,               # Mean computation requirement in CPU cycles
     },
 
     "scheduler": {

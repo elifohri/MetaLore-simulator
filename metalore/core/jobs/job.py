@@ -106,6 +106,13 @@ class Job:
         return self.proc_end_at - self.proc_start_at
 
     @property
+    def aoi(self) -> Optional[int]:
+        """Age of Information: sensor data staleness at processing time."""
+        if self.proc_end_at is None or self.sensor_snapshot_at is None:
+            return None
+        return self.proc_end_at - self.sensor_snapshot_at
+
+    @property
     def aori(self) -> Optional[int]:
         """Age of Request Information: end-to-end latency from generation to processing complete."""
         if self.proc_end_at is None:

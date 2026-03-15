@@ -57,8 +57,8 @@ class SmartCityHandler(Handler):
 
         # UE jobs fully processed this timestep
         step_ue_jobs = [
-            job for job in env.job_tracker._jobs
-            if job.entity_type == 'UE' and job.proc_end_at == env.time
+            job for job in env.job_tracker.step_completed_jobs
+            if job.entity_type == 'UE'
         ]
 
         # Part 1: delay penalty — applied per job that exceeded the e2e threshold

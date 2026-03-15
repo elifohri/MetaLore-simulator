@@ -17,6 +17,7 @@ from metalore.core.entities.user_equipment import UserEquipment
 from metalore.core.entities.sensor import Sensor
 from metalore.core.jobs import JobGenerator, JobTracker, transmit, process
 from metalore.core.metrics import MetricsTracker
+from metalore.utils.monitoring import JobMonitor
 from metalore.utils.utility import BoundedLogUtility
 from metalore.visualization.renderer import Renderer
 
@@ -111,6 +112,7 @@ class MetaLoreEnv(gymnasium.Env):
         }
         self.job_generator = JobGenerator(**env_params, job_configs=job_config)
         self.job_tracker = JobTracker()
+        #self.monitor = JobMonitor()
 
         # Handler (defines action/observation/reward)
         self.handler = env_config['handler']
@@ -151,6 +153,7 @@ class MetaLoreEnv(gymnasium.Env):
         # Reset job generator, queues and tracker
         self.job_generator.reset()
         self.job_tracker.reset()
+        #self.monitor.reset()
         for entity in chain(self.users.values(), self.sensors.values()):
             entity.reset_queue()
         for bs in self.stations.values():
@@ -223,27 +226,33 @@ class MetaLoreEnv(gymnasium.Env):
                 nearest_sensor = self.association.get_nearest_sensor(ue)
                 job = self.job_generator.generate(ue, self.time, nearest_sensor_id=nearest_sensor.id if nearest_sensor else None)
                 self.job_tracker.on_generated(job)
+                #self.monitor.on_generated(job)
 
         for sensor in self.active_sensors:
             job = self.job_generator.generate(sensor, self.time, nearest_sensor_id=None)
             self.job_tracker.on_generated(job)
+            #self.monitor.on_generated(job)
 
         # 3. Transmit from entity tx queues → move completed jobs to BS proc queues
         for (bs, entity), rate in chain(self.datarates_ue.items(), self.datarates_sensor.items()):
             bits_sent, done = transmit(entity.tx_queue, rate, timestep=self.time)
-            self.job_tracker.on_transmitted(done, bits_sent)
+            self.job_tracker.on_transmitted((entity.DEVICE_TYPE, entity.id), done, bits_sent)
             for job in done:
                 bs.proc_queues[job.entity_type].enqueue(job)
-
+        
         # 4. Process jobs at MEC servers (comp_split divides compute between UE and sensor jobs)
         for bs in self.stations.values():
             cycles, done = process(bs.proc_queues[UserEquipment.DEVICE_TYPE], bs.compute_capacity * comp_split, timestep=self.time,
-                ready_fn=lambda job: self.job_tracker.sensor_latest_job.get(job.nearest_sensor_id) is not None)
+                ready_fn=lambda job: self.job_tracker.sensor_latest_processed_job.get(job.nearest_sensor_id) is not None)
             self.job_tracker.on_processed(done, cycles)
+            for job in done:
+                self.job_tracker.update_ue_sensor_sync(job)
 
             cycles, done = process(bs.proc_queues[Sensor.DEVICE_TYPE], bs.compute_capacity * (1 - comp_split), timestep=self.time)
             self.job_tracker.on_processed(done, cycles)
-
+            for job in done:
+                self.job_tracker.update_ue_sensor_sync(job)
+        
         ###################################
 
         # Compute scaled utilities from entities data rates (range [-1, 1])
@@ -290,6 +299,9 @@ class MetaLoreEnv(gymnasium.Env):
         if truncated:
             info["episode reward"] = reward
 
+        # Save job lifecycle log to monitor
+        #self.monitor.save("logs/monitor.csv")
+
         return observation, reward, terminated, truncated, info
     
 
@@ -330,7 +342,7 @@ class MetaLoreEnv(gymnasium.Env):
     
     def validate_connections(self) -> None:
         """Filter connections based on SNR threshold."""
-        for connections in (self.association.connections_ue, self.association.connections_sensor):
+        for connections in (self.connections_ue, self.connections_sensor):
             updated = {
                 bs: {entity for entity in entities if self.channel.check_connectivity(bs, entity)}
                 for bs, entities in connections.items()

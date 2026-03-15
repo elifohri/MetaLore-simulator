@@ -1,16 +1,17 @@
 """
 Metrics tracking for MetaLore simulation.
 
-Records per-timestep simulation data organized into five categories:
-- Environment: entity counts and time info
-- Topology: connections and nearest-sensor assignments
-- Performance: datarates, utilities, and queue lengths per entity
-- Actions: agent bandwidth and compute allocation splits
-- Jobs: queue lengths, transmission and processing throughput
+Records simulation data at five granularities:
+  - step_totals     : scalar aggregates across all entities, one value per timestep
+  - step_per_entity : per-(entity_type, entity_id) time series, one value per timestep
+  - step_per_bs     : per-BS time series — load, queue state (multi-cell)
+  - step_topology   : connection-map snapshots, one dict per timestep
+  - ep_totals       : episode-level scalar aggregates
+  - ep_per_entity   : per-entity episode totals
 """
 
 from collections import defaultdict
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 class MetricsTracker:
@@ -22,219 +23,185 @@ class MetricsTracker:
     def reset(self) -> None:
         """Clear all recorded metrics for a new episode."""
 
-        # Environment
-        self.environment: Dict[str, List] = {
-            "time": [],
-            "num_active_ues": [],
-            "num_active_sensors": [],
-            "throughput_ue": [],
-            "throughput_sensor": [],
+        self.step_totals: Dict[str, List] = {
+            "time": [], "num_active_ues": [], "num_active_sensors": [],
+            "ue_tx_queue_bits": [], "sensor_tx_queue_bits": [],
+            "ue_tx_queue_jobs": [], "sensor_tx_queue_jobs": [],
+            "jobs_generated": [], "jobs_transmitted": [], "jobs_processed": [],
+            "bits_transmitted": [], "cycles_processed": [],
+            "ue_bits_transmitted": [], "sensor_bits_transmitted": [],
+            "ue_cycles_processed": [], "sensor_cycles_processed": [],
+            "bw_split": [], "comp_split": [], "reward": [], "observation": [],
+            "mean_aoi": [], "mean_aori": [], "mean_aosi": [],
         }
 
-        # Topology (snapshot per timestep)
-        self.topology: Dict[str, List] = {
-            "connections_ue": [],
-            "connections_sensor": [],
-            "nearest_sensor": [],
-            "bs_load_ue": [],
-            "bs_load_sensor": [],
+        self.step_per_entity: Dict[str, defaultdict] = {
+            k: defaultdict(list) for k in (
+                "datarate", "tx_queue_jobs",
+                "jobs_generated", "jobs_transmitted", "jobs_processed",
+                "bits_transmitted", "cycles_processed",
+            )
         }
 
-        # Performance (per-entity time series)
-        self.performance: Dict[str, defaultdict] = {
-            # Wireless channel
-            "datarates_ue":           defaultdict(list),
-            "datarates_sensor":       defaultdict(list),
-            "utilities_ue":           defaultdict(list),
-            "utilities_sensor":       defaultdict(list),
-            # Queue state
-            "tx_queue_length_ue":     defaultdict(list),
-            "tx_queue_length_sensor": defaultdict(list),
-            # Job activity
-            "jobs_generated_ue":      defaultdict(list),
-            "bits_transmitted_ue":    defaultdict(list),
+        self.step_topology: Dict[str, List] = {
+            "ue_connections": [], "sensor_connections": [], "nearest_sensor": [],
         }
 
-        # Actions & Outputs
-        self.actions: Dict[str, List] = {
-            "bw_split": [],
-            "comp_split": [],
-            "reward": [],
-            "observation": [],
+        self.step_per_bs: Dict[str, defaultdict] = {
+            k: defaultdict(list) for k in (
+                "ue_connections", "sensor_connections",
+                "ue_proc_queue_jobs", "sensor_proc_queue_jobs",
+                "ue_proc_queue_cycles", "sensor_proc_queue_cycles",
+            )
         }
 
-        # Jobs — per-step queue backlog and completion counts
-        self.jobs: Dict[str, List] = {
-            # Raw backlog (for analysis/reward computation)
-            "tx_queue_bits_ue": [],
-            "tx_queue_bits_sensor": [],
-            "proc_queue_cycles_ue": [],
-            "proc_queue_cycles_sensor": [],
-            # Job counts (for visualization)
-            "tx_queue_jobs_ue": [],
-            "tx_queue_jobs_sensor": [],
-            "proc_queue_jobs_ue": [],
-            "proc_queue_jobs_sensor": [],
-            # Step-level events
-            "jobs_generated": [],
-            "jobs_transmitted": [],
-            "jobs_processed": [],
-            "bits_transmitted": [],
-            "cycles_processed": [],
-            # Age metrics (mean over UE jobs processed this step, None if no jobs)
-            "mean_aori": [],
-            "mean_aosi": [],
-        }
+        self.ep_totals: Dict = {}
+        self.ep_per_entity: Dict = {}
+
+    # --- Public API ---
 
     def record(self, env, bw_split: float, comp_split: float, reward: float, observation) -> None:
-        """Record a snapshot of the current simulation state.
+        """Record a snapshot of the current simulation state. Called once per step."""
+        jt = env.job_tracker
+        self._record_topology(env)
+        self._record_per_bs(env)
+        self._record_per_entity(env, jt)
+        self._record_step_totals(env, jt, bw_split, comp_split, reward, observation)
 
-        Should be called once per step, after utilities are computed.
-        """
-        # Environment
-        self.environment["time"].append(env.time)
-        self.environment["num_active_ues"].append(len(env.active_ues))
-        self.environment["num_active_sensors"].append(len(env.active_sensors))
-        self.environment["throughput_ue"].append(sum(env.datarates_ue.values()))
-        self.environment["throughput_sensor"].append(sum(env.datarates_sensor.values()))
+    def finalize(self, job_tracker) -> Dict:
+        """Compute and store episode-level aggregates. Call once at the end of an episode."""
+        st   = self.step_totals
+        ep   = job_tracker.ep_totals
 
-        # Topology — connections
-        conn_ue = {
-            bs.id: sorted(ue.id for ue in ues)
-            for bs, ues in env.connections_ue.items()
-            if ues
+        self.ep_totals = {
+            "jobs_generated":       ep.jobs_generated,
+            "jobs_transmitted":     ep.jobs_transmitted,
+            "jobs_processed":       ep.jobs_processed,
+            "bits_transmitted":     ep.bits_transmitted,
+            "cycles_processed":     ep.cycles_processed,
+            "job_completion_rate":  ep.jobs_processed / ep.jobs_generated if ep.jobs_generated > 0 else 0.0,
+            "total_reward":         sum(st["reward"]) if st["reward"] else None,
+            "mean_aoi":             self._safe_mean([j.aoi  for j in job_tracker.completed_jobs if j.entity_type == 'UE' and j.aoi  is not None]),
+            "mean_aori":            self._safe_mean([j.aori for j in job_tracker.completed_jobs if j.entity_type == 'UE' and j.aori is not None]),
+            "mean_aosi":            self._safe_mean([j.aosi for j in job_tracker.completed_jobs if j.entity_type == 'UE' and j.aosi is not None]),
         }
-        conn_sensor = {
-            bs.id: sorted(s.id for s in sensors)
-            for bs, sensors in env.connections_sensor.items()
-            if sensors
+
+        fields = ["jobs_generated", "jobs_transmitted", "jobs_processed", "bits_transmitted", "cycles_processed"]
+        self.ep_per_entity = {
+            field: {k: getattr(v, field) for k, v in job_tracker.ep_per_entity.items()}
+            for field in fields
         }
-        nearest = {
-            ue.id: sensor.id
-            for ue, sensor in env.association.nearest_sensor.items()
-            if ue in env.active_ues
-        }
-        bs_load_ue = {bs.id: len(ues) for bs, ues in env.connections_ue.items()}
-        bs_load_sensor = {bs.id: len(sensors) for bs, sensors in env.connections_sensor.items()}
 
-        self.topology["connections_ue"].append(conn_ue)
-        self.topology["connections_sensor"].append(conn_sensor)
-        self.topology["nearest_sensor"].append(nearest)
-        self.topology["bs_load_ue"].append(bs_load_ue)
-        self.topology["bs_load_sensor"].append(bs_load_sensor)
-
-        # Performance — per entity per step
-        datarate_ue_map = {ue.id: rate for (_, ue), rate in env.datarates_ue.items()}
-        datarate_sensor_map = {s.id: rate for (_, s), rate in env.datarates_sensor.items()}
-        util_ue_map = {ue.id: util for ue, util in env.utilities_ue.items()}
-        util_sensor_map = {s.id: util for s, util in env.utilities_sensor.items()}
-
-        for ue_id, ue in env.users.items():
-            self.performance["datarates_ue"][ue_id].append(datarate_ue_map.get(ue_id, float('nan')))
-            self.performance["utilities_ue"][ue_id].append(util_ue_map.get(ue_id, float('nan')))
-            self.performance["tx_queue_length_ue"][ue_id].append(ue.tx_queue.length)
-            self.performance["jobs_generated_ue"][ue_id].append(env.job_tracker.step_entity_generated.get(('UE', ue_id), 0))
-            self.performance["bits_transmitted_ue"][ue_id].append(env.job_tracker.step_entity_bits_transmitted.get(('UE', ue_id), 0.0))
-
-        for sensor_id, sensor in env.sensors.items():
-            self.performance["datarates_sensor"][sensor_id].append(datarate_sensor_map.get(sensor_id, float('nan')))
-            self.performance["utilities_sensor"][sensor_id].append(util_sensor_map.get(sensor_id, float('nan')))
-            self.performance["tx_queue_length_sensor"][sensor_id].append(sensor.tx_queue.length)
-
-        # Actions & Outputs
-        self.actions["bw_split"].append(bw_split)
-        self.actions["comp_split"].append(comp_split)
-        self.actions["reward"].append(reward)
-        self.actions["observation"].append(observation.tolist() if hasattr(observation, 'tolist') else observation)
-
-        # Jobs — queue backlog and step-level completion counts
-        self.jobs["tx_queue_bits_ue"].append(
-            sum(ue.tx_queue.total_bits for ue in env.users.values())
-        )
-        self.jobs["tx_queue_bits_sensor"].append(
-            sum(s.tx_queue.total_bits for s in env.sensors.values())
-        )
-        self.jobs["proc_queue_cycles_ue"].append(
-            sum(bs.proc_queues['UE'].total_cycles for bs in env.stations.values())
-        )
-        self.jobs["proc_queue_cycles_sensor"].append(
-            sum(bs.proc_queues['SENSOR'].total_cycles for bs in env.stations.values())
-        )
-        self.jobs["tx_queue_jobs_ue"].append(
-            sum(ue.tx_queue.length for ue in env.users.values())
-        )
-        self.jobs["tx_queue_jobs_sensor"].append(
-            sum(s.tx_queue.length for s in env.sensors.values())
-        )
-        self.jobs["proc_queue_jobs_ue"].append(
-            sum(bs.proc_queues['UE'].length for bs in env.stations.values())
-        )
-        self.jobs["proc_queue_jobs_sensor"].append(
-            sum(bs.proc_queues['SENSOR'].length for bs in env.stations.values())
-        )
-        self.jobs["jobs_generated"].append(env.job_tracker.step_generated)
-        self.jobs["jobs_transmitted"].append(env.job_tracker.step_transmitted)
-        self.jobs["jobs_processed"].append(env.job_tracker.step_processed)
-        self.jobs["bits_transmitted"].append(env.job_tracker.step_bits_transmitted)
-        self.jobs["cycles_processed"].append(env.job_tracker.step_cycles_processed)
-
-        step_ue_jobs = [
-            job for job in env.job_tracker._jobs
-            if job.entity_type == 'UE' and job.proc_end_at == env.time
-        ]
-        n = len(step_ue_jobs)
-        self.jobs["mean_aori"].append(sum(job.aori for job in step_ue_jobs) / n if n > 0 else None)
-        self.jobs["mean_aosi"].append(sum(job.aosi for job in step_ue_jobs) / n if n > 0 else None)
-
-    def summary(self, job_tracker) -> Dict:
-        """Return episode-level aggregate statistics.
-
-        Should be called at the end of an episode (after truncation).
-        """
-        rewards = self.actions["reward"]
-        throughput_ue = self.environment["throughput_ue"]
-        throughput_sensor = self.environment["throughput_sensor"]
-
-        return {
-            # Episode job totals
-            "total_generated":        job_tracker.total_generated,
-            "total_transmitted":      job_tracker.total_transmitted,
-            "total_processed":        job_tracker.total_processed,
-            "total_bits_transmitted": job_tracker.total_bits_transmitted,
-            "total_cycles_processed": job_tracker.total_cycles_processed,
-            "completion_rate":        job_tracker.total_processed / job_tracker.total_generated
-                                      if job_tracker.total_generated > 0 else 0.0,
-            # Per-entity episode totals (keyed by (entity_type, entity_id))
-            "entity_generated":         dict(job_tracker.entity_generated),
-            "entity_transmitted":       dict(job_tracker.entity_transmitted),
-            "entity_processed":         dict(job_tracker.entity_processed),
-            "entity_bits_transmitted":  dict(job_tracker.entity_bits_transmitted),
-            "entity_cycles_processed":  dict(job_tracker.entity_cycles_processed),
-            # Derived episode-level stats
-            "mean_reward":            sum(rewards) / len(rewards) if rewards else None,
-            "total_reward":           sum(rewards) if rewards else None,
-            "mean_throughput_ue":     sum(throughput_ue) / len(throughput_ue) if throughput_ue else None,
-            "mean_throughput_sensor": sum(throughput_sensor) / len(throughput_sensor) if throughput_sensor else None,
-        }
+        return {**self.ep_totals, "per_entity": self.ep_per_entity}
 
     @property
     def num_steps(self) -> int:
         """Number of timesteps recorded so far."""
-        return len(self.environment["time"])
+        return len(self.step_totals["time"])
 
-    def latest(self, category: str, metric: str):
-        """Get the most recent value for a metric, or None if empty."""
-        data = getattr(self, category, {}).get(metric)
-        if data is None:
-            return None
-        if isinstance(data, list):
-            return data[-1] if data else None
-        # defaultdict(list) — return dict of latest values
-        return {k: v[-1] for k, v in data.items() if v}
+    def latest(self, metric: str, per_entity: bool = False, per_bs: bool = False):
+        """Return the most recent value for a step metric."""
+        if per_entity:
+            data = self.step_per_entity.get(metric)
+            return {k: v[-1] for k, v in data.items() if v} if data else None
+        if per_bs:
+            data = self.step_per_bs.get(metric)
+            return {k: v[-1] for k, v in data.items() if v} if data else None
+        data = self.step_totals.get(metric)
+        return data[-1] if data else None
 
-    def mean(self, category: str, metric: str):
-        """Get the running mean for a scalar metric, or None if empty."""
-        data = getattr(self, category, {}).get(metric)
-        if not isinstance(data, list) or not data:
-            return None
-        return sum(data) / len(data)
+    def mean(self, metric: str) -> Optional[float]:
+        """Return the running mean for a scalar step metric (skips None values)."""
+        data = self.step_totals.get(metric)
+        return self._safe_mean([v for v in data if v is not None]) if data else None
+
+    # --- Private helpers ---
+
+    @staticmethod
+    def _safe_mean(values) -> Optional[float]:
+        return sum(values) / len(values) if values else None
+
+    def _record_topology(self, env) -> None:
+        self.step_topology["ue_connections"].append({
+            bs.id: sorted(ue.id for ue in ues)
+            for bs, ues in env.connections_ue.items() if ues
+        })
+        self.step_topology["sensor_connections"].append({
+            bs.id: sorted(s.id for s in sensors)
+            for bs, sensors in env.connections_sensor.items() if sensors
+        })
+        self.step_topology["nearest_sensor"].append({
+            ue.id: sensor.id
+            for ue, sensor in env.association.nearest_sensor.items()
+        })
+
+    def _record_per_bs(self, env) -> None:
+        for bs in env.stations.values():
+            self.step_per_bs["ue_connections"][bs.id].append(len(env.connections_ue[bs]))
+            self.step_per_bs["sensor_connections"][bs.id].append(len(env.connections_sensor[bs]))
+            self.step_per_bs["ue_proc_queue_jobs"][bs.id].append(bs.proc_queues['UE'].length)
+            self.step_per_bs["sensor_proc_queue_jobs"][bs.id].append(bs.proc_queues['SENSOR'].length)
+            self.step_per_bs["ue_proc_queue_cycles"][bs.id].append(bs.proc_queues['UE'].total_cycles)
+            self.step_per_bs["sensor_proc_queue_cycles"][bs.id].append(bs.proc_queues['SENSOR'].total_cycles)
+
+    def _record_per_entity(self, env, jt) -> None:
+        datarate_map = {('UE', ue.id): r for (_, ue), r in env.datarates_ue.items()}
+        datarate_map.update({('SENSOR', s.id): r for (_, s), r in env.datarates_sensor.items()})
+        all_entities = (
+            [('UE',     eid, e.tx_queue) for eid, e in env.users.items()] +
+            [('SENSOR', eid, e.tx_queue) for eid, e in env.sensors.items()]
+        )
+        for entity_type, eid, tx_queue in all_entities:
+            key    = (entity_type, eid)
+            counts = jt.step_per_entity[key]
+            self.step_per_entity["datarate"][key].append(datarate_map.get(key, float('nan')))
+            self.step_per_entity["tx_queue_jobs"][key].append(tx_queue.length)
+            self.step_per_entity["jobs_generated"][key].append(counts.jobs_generated)
+            self.step_per_entity["jobs_transmitted"][key].append(counts.jobs_transmitted)
+            self.step_per_entity["bits_transmitted"][key].append(counts.bits_transmitted)
+            self.step_per_entity["jobs_processed"][key].append(counts.jobs_processed)
+            self.step_per_entity["cycles_processed"][key].append(counts.cycles_processed)
+
+    def _record_step_totals(self, env, jt, bw_split: float, comp_split: float, reward: float, observation) -> None:
+        st = jt.step_totals
+
+        # Per-type bits/cycles (single pass over step_per_entity)
+        ue_bits = ue_cycles = sensor_bits = sensor_cycles = 0.0
+        for (etype, _), counts in jt.step_per_entity.items():
+            if etype == 'UE':
+                ue_bits   += counts.bits_transmitted
+                ue_cycles += counts.cycles_processed
+            else:
+                sensor_bits   += counts.bits_transmitted
+                sensor_cycles += counts.cycles_processed
+
+        # AoI over UE jobs completed this step
+        step_ue_jobs = [j for j in jt.step_completed_jobs if j.entity_type == 'UE']
+
+        updates = {
+            "time":                     env.time,
+            "num_active_ues":           len(env.active_ues),
+            "num_active_sensors":       len(env.active_sensors),
+            "ue_tx_queue_bits":         sum(ue.tx_queue.total_bits for ue in env.active_ues),
+            "sensor_tx_queue_bits":     sum(s.tx_queue.total_bits  for s  in env.active_sensors),
+            "ue_tx_queue_jobs":         sum(ue.tx_queue.length     for ue in env.active_ues),
+            "sensor_tx_queue_jobs":     sum(s.tx_queue.length      for s  in env.active_sensors),
+            "jobs_generated":           st.jobs_generated,
+            "jobs_transmitted":         st.jobs_transmitted,
+            "jobs_processed":           st.jobs_processed,
+            "bits_transmitted":         st.bits_transmitted,
+            "cycles_processed":         st.cycles_processed,
+            "ue_bits_transmitted":      ue_bits,
+            "sensor_bits_transmitted":  sensor_bits,
+            "ue_cycles_processed":      ue_cycles,
+            "sensor_cycles_processed":  sensor_cycles,
+            "bw_split":                 bw_split,
+            "comp_split":               comp_split,
+            "reward":                   reward,
+            "observation":              observation.tolist() if hasattr(observation, 'tolist') else observation,
+            "mean_aoi":                 self._safe_mean([j.aoi  for j in step_ue_jobs if j.aoi  is not None]),
+            "mean_aori":                self._safe_mean([j.aori for j in step_ue_jobs if j.aori is not None]),
+            "mean_aosi":                self._safe_mean([j.aosi for j in step_ue_jobs if j.aosi is not None]),
+        }
+        for key, val in updates.items():
+            self.step_totals[key].append(val)
