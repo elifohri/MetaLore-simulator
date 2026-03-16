@@ -47,7 +47,7 @@ It focuses on real-time synchronization and resource allocation in smart city en
 
 ```bash
 git clone https://github.com/elifohri/MetaLore-simulator
-cd MetaLore
+cd metalore
 pip install -e .
 ```
 
