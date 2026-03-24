@@ -17,7 +17,6 @@ from metalore.core.entities.user_equipment import UserEquipment
 from metalore.core.entities.sensor import Sensor
 from metalore.core.jobs import JobGenerator, JobTracker, transmit, process
 from metalore.core.metrics import MetricsTracker
-from metalore.utils.monitoring import JobMonitor
 from metalore.utils.utility import BoundedLogUtility
 from metalore.visualization.renderer import Renderer
 
@@ -112,7 +111,6 @@ class MetaLoreEnv(gymnasium.Env):
         }
         self.job_generator = JobGenerator(**env_params, job_configs=job_config)
         self.job_tracker = JobTracker()
-        #self.monitor = JobMonitor()
 
         # Handler (defines action/observation/reward)
         self.handler = env_config['handler']
@@ -153,7 +151,6 @@ class MetaLoreEnv(gymnasium.Env):
         # Reset job generator, queues and tracker
         self.job_generator.reset()
         self.job_tracker.reset()
-        #self.monitor.reset()
         for entity in chain(self.users.values(), self.sensors.values()):
             entity.reset_queue()
         for bs in self.stations.values():
@@ -226,12 +223,10 @@ class MetaLoreEnv(gymnasium.Env):
                 nearest_sensor = self.association.get_nearest_sensor(ue)
                 job = self.job_generator.generate(ue, self.time, nearest_sensor_id=nearest_sensor.id if nearest_sensor else None)
                 self.job_tracker.on_generated(job)
-                #self.monitor.on_generated(job)
 
         for sensor in self.active_sensors:
             job = self.job_generator.generate(sensor, self.time, nearest_sensor_id=None)
             self.job_tracker.on_generated(job)
-            #self.monitor.on_generated(job)
 
         # 3. Transmit from entity tx queues → move completed jobs to BS proc queues
         for (bs, entity), rate in chain(self.datarates_ue.items(), self.datarates_sensor.items()):
@@ -298,10 +293,7 @@ class MetaLoreEnv(gymnasium.Env):
 
         if truncated:
             info["episode reward"] = reward
-
-        # Save job lifecycle log to monitor
-        #self.monitor.save("logs/monitor.csv")
-
+            
         return observation, reward, terminated, truncated, info
     
 
