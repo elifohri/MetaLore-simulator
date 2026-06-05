@@ -38,8 +38,8 @@ class Channel:
 
         Args:
             bs: Base station
-            entity: UE or sensor
-
+            entity: UE, sensor or sensors
+ 
         Returns:
             Power loss in dB
         """
@@ -51,7 +51,7 @@ class Channel:
 
         Args:
             bs: Base station
-            entity: UE or sensor
+            entity: UE, sensor or sensors
 
         Returns:
             Signal-to-noise ratio
@@ -66,7 +66,7 @@ class Channel:
 
         Args:
             bs: Base station
-            entity: UE or sensor
+            entity: UE, sensor or sensors
 
         Returns:
             True if SNR exceeds entity's minimum threshold

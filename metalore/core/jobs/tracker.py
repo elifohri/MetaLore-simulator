@@ -97,11 +97,11 @@ class JobTracker:
 
     def update_ue_sensor_sync(self, job: Job) -> None:
         """Update sensor snapshot timestamp on UE jobs; track latest sensor job."""
-        if job.entity_type == 'UE':
+        if job.job_type == 'UE':
             sensor_job = self.sensor_latest_processed_job.get(job.nearest_sensor_id)
             if sensor_job is not None:
                 job.sensor_snapshot_at = sensor_job.generated_at
-        elif job.entity_type == 'SENSOR':
+        elif job.job_type == 'SENSOR':
             self.sensor_latest_processed_job[job.entity_id] = job
 
     def to_dataframe(self) -> pd.DataFrame:
@@ -111,6 +111,7 @@ class JobTracker:
                 "job_id":             job.id,
                 "entity_id":          job.entity_id,
                 "entity_type":        job.entity_type,
+                "job_type":           job.job_type,
                 "data_size":          job.data_size,
                 "compute_size":       job.compute_size,
                 "generated_at":       job.generated_at,
@@ -131,7 +132,7 @@ class JobTracker:
             for job in self.completed_jobs
         ]
         columns = [
-            "job_id", "entity_id", "entity_type", "data_size", "compute_size",
+            "job_id", "entity_id", "entity_type", "job_type", "data_size", "compute_size",
             "generated_at", "tx_start_at", "tx_end_at", "proc_start_at", "proc_end_at",
             "tx_queue_wait", "tx_duration", "proc_queue_wait", "proc_duration",
             "nearest_sensor_id", "sensor_snapshot_at", "aoi", "aori", "aosi",

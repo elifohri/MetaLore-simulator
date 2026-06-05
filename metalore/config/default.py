@@ -22,18 +22,22 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "width": 200.0,                         # Area width in meters
         "height": 200.0,                        # Area height in meters
         "max_steps": 100,                       # Maximum timesteps per episode
-        "seed": 999,                            # Random seed (None for random)
+        "seed": None,                            # Random seed (None for random)
         "reset_rng_episode": False,             # Reset RNG each episode for reproducibility
         "num_ues": 3,                           # Number of user equipments
+        "num_isacs" : 0,
         "num_sensors": 3,                       # Number of sensors
         "arrival_ue": NoDeparture,              # Arrival model for UEs
         "arrival_sensor": NoDeparture,          # Arrival model for sensors
+        "arrival_isac" : NoDeparture,           # Arrival model for ISAC
         "movement_ue": RandomWaypointMovement,  # Movement model for UEs
         "movement_sensor": StaticMovement,      # Movement model for sensors
+        "movement_isac" : RandomWaypointMovement, #Movement model for ISAC
         "channel": OkumuraHata,                 # Channel model
         "association": ClosestAssociation,      # Device association model
         "scheduler_ue": ResourceFair,           # Resource scheduler for UEs
         "scheduler_sensor": ResourceFair,       # Resource scheduler for sensors
+        "scheduler_isac": ResourceFair,
         "handler": SmartCityHandler,            # Handler to use for RL formulation
         "logger": SimulationLogger,             # Logger for logging simulation steps
     },
@@ -63,7 +67,19 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "update_interval": 1,                   # Timesteps between data transmissions
     },
 
+    "isac" : {
+        "velocity": 0.5,                        # Movement speed in m/s
+        "height": 1.5,                          # Antenna height in meters
+        "snr_threshold": 2e-8,                  # Minimum SNR for connectivity
+        "noise": 1e-9,                          # Receiver noise power in Watts
+        "sensing_range": 40.0,                  # Detection radius in meters
+        "update_interval": 1,                   # Timesteps between data transmissions
+        "isac_range_area": 50.0,
+        "communication_prob": 0.5,
+    },
+
     "sensor_placement": {
+        "mode": "uniform",
         "min_distance": 20,                     # Minimum distance from BS in meters
         "max_distance": 80,                     # Maximum distance from BS in meters
         "margin": 10,                           # Margin from area edges in meters
@@ -78,6 +94,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "job_sensor": {
         "data_size_mean": 70.0,                 # Mean sensor data size in bits
         "compute_size_mean": 7.0,               # Mean computation requirement in CPU cycles
+    },
+
+    "job_isac" : {
+        "generation_probability": 0.7,
+        "data_size_mean" : 80.0,
+        "compute_size_mean" : 8.0,
     },
 
     "scheduler": {
@@ -188,4 +210,21 @@ def multi_cell_config() -> Dict[str, Any]:
     ]
     config['environment']['num_ues'] = 15
     config['environment']['num_sensors'] = 20
+    return config
+
+def ISAC_config() -> Dict[str,Any]:
+    """configuration for ISAC scenario, 0 UE and 0 sensors"""
+    config = default_config()
+    config['environment']['num_ues'] = 0
+    config['environment']['num_isacs'] = 5
+    config['environment']['num_sensors'] = 8
+    return config
+
+def ISAC_cluster_config() -> Dict[str,Any]:
+    """Configuration for ISAC scenario with clusters of sensors"""
+    config = default_config()
+    config['sensor_placement']['mode'] = "clusters"
+    config['environment']['num_ues'] = 0
+    config['environment']['num_isacs'] = 10
+    config['environment']['num_sensors'] = 16
     return config

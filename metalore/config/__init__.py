@@ -5,4 +5,6 @@ from metalore.config.default import (
     large_config, 
     multi_cell_config, 
     mobile_sensor_config,
+    ISAC_config,
+    ISAC_cluster_config,
 )

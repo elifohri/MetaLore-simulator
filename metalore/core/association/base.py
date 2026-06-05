@@ -12,8 +12,9 @@ import numpy as np
 from metalore.core.entities.base_station import BaseStation
 from metalore.core.entities.user_equipment import UserEquipment
 from metalore.core.entities.sensor import Sensor
+from metalore.core.entities.ISAC import ISAC
 
-Entity = Union[UserEquipment, Sensor]
+Entity = Union[UserEquipment, Sensor, ISAC]
 
 
 class Association:
@@ -31,6 +32,7 @@ class Association:
         # Mappings of BS to connected UEs and sensors, and UE to nearest sensor
         self.connections_ue: Dict[BaseStation, Set[UserEquipment]] = defaultdict(set)
         self.connections_sensor: Dict[BaseStation, Set[Sensor]] = defaultdict(set)
+        self.connections_isac: Dict[BaseStation, Set[ISAC]] = defaultdict(set)
         self.nearest_sensor: Dict[UserEquipment, Sensor] = {}
 
     def reset(self) -> None:
@@ -39,7 +41,7 @@ class Association:
             self.rng = np.random.default_rng(self.seed)
 
     @abstractmethod
-    def update_association(self, stations: Dict, users: Dict, sensors: Dict) -> None:
+    def update_association(self, stations: Dict, users: Dict, sensors: Dict, isacs: Dict) -> None:
         """
         Perform full association update cycle for ues and sensors.
 
@@ -57,6 +59,10 @@ class Association:
     def get_connected_sensors(self, bs: BaseStation) -> Set[Sensor]:
         """Return the set of sensors currently connected to bs."""
         return self.connections_sensor.get(bs, set())
+    
+    def get_connected_isacs(self, bs: BaseStation) -> Set[ISAC]:
+        """Return the set of ISAC currently connected to bs."""
+        return self.connections_isac.get(bs, set())
 
     def get_bs_for_entity(self, entity: Entity) -> Optional[BaseStation]:
         """Return the base station the entity is connected to, or None."""

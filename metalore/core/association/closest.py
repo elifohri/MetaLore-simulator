@@ -21,6 +21,7 @@ class ClosestAssociation(Association):
         super().reset()
         self.connections_ue.clear()
         self.connections_sensor.clear()
+        self.connections_isac.clear()
         self.nearest_sensor.clear()
 
     @staticmethod
@@ -45,30 +46,40 @@ class ClosestAssociation(Association):
         for entity_idx, bs_idx in enumerate(closest_indices):
             connections[bs_list[bs_idx]].add(entities[entity_idx])
 
-    def _update_nearest_sensor(self, ue_list: List, sensor_list: List) -> None:
-        """Populate self.nearest_sensor mapping each UE to its closest sensor."""
+    def _update_nearest_sensor(self, ue_list: List, sensor_list: List, isac_list: List) -> None:
+        """Populate self.nearest_sensor mapping each UE or ISAC to its closest sensor."""
         self.nearest_sensor.clear()
 
-        if not ue_list or not sensor_list:
+        if not sensor_list:
             return
 
-        ue_positions = np.array([[ue.x, ue.y] for ue in ue_list])
         sensor_positions = np.array([[s.x, s.y] for s in sensor_list])
 
-        distances = self._compute_distances(ue_positions, sensor_positions)
-        closest_indices = np.argmin(distances, axis=1)
+        if ue_list:
+            ue_positions = np.array([[ue.x, ue.y] for ue in ue_list])
+            distances_ue_sensor = self._compute_distances(ue_positions, sensor_positions)
+            closest_indices_ue_sensor = np.argmin(distances_ue_sensor, axis=1)
+            for ue_idx, sensor_idx in enumerate(closest_indices_ue_sensor):
+                self.nearest_sensor[ue_list[ue_idx]] = sensor_list[sensor_idx]
 
-        for ue_idx, sensor_idx in enumerate(closest_indices):
-            self.nearest_sensor[ue_list[ue_idx]] = sensor_list[sensor_idx]
 
-    def update_association(self, stations: Dict, users: Dict, sensors: Dict) -> None:
+        if isac_list:
+            isac_positions = np.array([[isac.x, isac.y] for isac in isac_list])
+            distances_isac_sensor = self._compute_distances(isac_positions, sensor_positions)
+            closest_indices_isac_sensor = np.argmin(distances_isac_sensor, axis=1)
+            for isac_idx, sensor_idx in enumerate(closest_indices_isac_sensor):
+                self.nearest_sensor[isac_list[isac_idx]] = sensor_list[sensor_idx]
+
+    def update_association(self, stations: Dict, users: Dict, sensors: Dict, isacs: Dict) -> None:
         """
         Perform full association update cycle.
 
         1. Associate UEs to closest BS
-        2. Associate sensors to closest BS
+        2. Associate Sensors to closest BS
+        3. Associate ISACs to closest BS
         3. Update each UE's nearest sensor
         """
         self._associate_to_bs(list(stations.values()), list(users.values()), self.connections_ue)
         self._associate_to_bs(list(stations.values()), list(sensors.values()), self.connections_sensor)
-        self._update_nearest_sensor(list(users.values()), list(sensors.values()))
+        self._associate_to_bs(list(stations.values()), list(isacs.values()), self.connections_isac)
+        self._update_nearest_sensor(list(users.values()), list(sensors.values()), list(isacs.values()))

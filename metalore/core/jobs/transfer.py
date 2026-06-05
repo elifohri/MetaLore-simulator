@@ -12,7 +12,7 @@ from metalore.core.jobs.job import Job
 from metalore.core.jobs.queue import TxQueue
 
 
-def transmit(queue: TxQueue, datarate: float, timestep: int) -> Tuple[float, List[Job]]:
+def transmit(queue: TxQueue, datarate: float, timestep: int, active_mode: float = None) -> Tuple[float, List[Job]]:
     """
     Uses the available channel capacity (datarate) to send bits from the head of the TxQueue.
 
@@ -24,13 +24,16 @@ def transmit(queue: TxQueue, datarate: float, timestep: int) -> Tuple[float, Lis
     Returns:
         bits_sent:      Total bits transmitted this timestep.
         completed_jobs: List of Job objects fully transmitted, ready for processing.
-    """
+    """ 
 
     bits_sent = 0.0
     completed: List[Job] = []
 
     while queue.length > 0 and datarate > 0.0:
         job = queue.head()
+
+        #if active_mode is not None and active_mode != job.job_type:
+        #    break
 
         if job.tx_start_at is None:
             job.tx_start_at = timestep

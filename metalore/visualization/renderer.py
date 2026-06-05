@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
-from metalore.visualization.symbols import BS_SYMBOL, SENSOR_SYMBOL
+from metalore.visualization.symbols import BS_SYMBOL, SENSOR_SYMBOL, ISAC_SYMBOL
 
 
 class Renderer:
@@ -37,18 +37,18 @@ class Renderer:
         """Render the environment."""
         if self.closed:
             return None
-
+        
         # Set up matplotlib figure & axis configuration
         dpi = plt.rcParams['figure.dpi']
         fx = max(3.0 / 2.0 * 1.25 * env.width / dpi, 8.0)
-        fy = max(1.25 * env.height / dpi, 5.0)
+        fy = max(4 * env.height / dpi, 5.0)
         fig = plt.figure(figsize=(fx, fy))
         gs = fig.add_gridspec(
             ncols=2,
-            nrows=3,
+            nrows=5,
             width_ratios=(4, 2),
-            height_ratios=(2, 3, 3),
-            hspace=0.45,
+            height_ratios=(2, 3, 3, 3, 3),
+            hspace=0.5,
             wspace=0.2,
             top=0.95,
             bottom=0.15,
@@ -60,12 +60,16 @@ class Renderer:
         metrics_ax = fig.add_subplot(gs[0, 1])
         bw_alloc_ax = fig.add_subplot(gs[1, 1])
         comp_alloc_ax = fig.add_subplot(gs[2, 1])
+        tx_queue_ax = fig.add_subplot(gs[3, 1])
+        mec_queue_ax = fig.add_subplot(gs[4, 1])
 
         # Render each component
         self.render_simulation(env, sim_ax)
         self.render_metrics(env, metrics_ax)
         self.render_bw_allocation(env, bw_alloc_ax)
         self.render_comp_allocation(env, comp_alloc_ax)
+        self.render_tx_queue_evolution(env,tx_queue_ax)
+        self.render_mec_queue_evolution(env,mec_queue_ax)
 
         # Convert to image
         fig.align_ylabels((bw_alloc_ax, comp_alloc_ax))
@@ -116,6 +120,8 @@ class Renderer:
 
         # Plot inactive UEs as grayed out
         active_ue_set = set(env.utilities_ue.keys())
+        active_isac_set = set(env.utilities_isac.keys())
+
         for ue in env.users.values():
             if ue not in active_ue_set:
                 ax.scatter(
@@ -126,6 +132,21 @@ class Renderer:
                 ax.annotate(ue.id, xy=(ue.x, ue.y), ha="center", va="center",
                             color="gray", alpha=0.5)
 
+        for isac in env.isacs.values():
+            if isac not in active_isac_set:
+                ax.scatter(
+                    isac.x, isac.y,
+                    s=200, zorder=1,
+                    color="lightgray", marker=ISAC_SYMBOL, alpha=0.5,
+                )
+                ax.plot(
+                    isac.x, isac.y,
+                    marker=ISAC_SYMBOL,
+                    markersize=10, markeredgewidth=0.1, color="gray", alpha=0.5, zorder=2
+                )
+                ax.annotate(isac.id, xy=(isac.x, isac.y), ha="center", va="center",
+                            color="gray", alpha=0.5)
+                
         # Plot active UEs colored by utility
         for ue, utility in env.utilities_ue.items():
             utility = env.utility.unscale(utility)
@@ -140,6 +161,13 @@ class Renderer:
                 marker="o",
             )
             ax.annotate(ue.id, xy=(ue.x, ue.y), ha="center", va="center")
+
+        for isac, utility in env.utilities_isac.items():
+            utility = env.utility.unscale(utility)
+            color = colormap(unorm(utility))
+            mode_color = "blue" if isac.current_mode == 'UE' else "red"
+            ax.plot(isac.x, isac.y, marker=ISAC_SYMBOL, markersize=10, markeredgewidth=0.1, color=mode_color, zorder=3)
+            ax.annotate(isac.id, xy=(isac.x, isac.y), ha="center", va="center")
 
         for bs in env.stations.values():
             ax.plot(
@@ -182,6 +210,22 @@ class Renderer:
                     linewidth=3,
                     zorder=-1,
                 )
+            
+            for isac in env.connections_isac[bs]:
+                color = "blue" if isac.current_mode == 'UE' else "red"
+                # add black background/borders for lines for visibility
+                ax.plot(
+                    [isac.x, bs.x],
+                    [isac.y, bs.y],
+                    color=color,
+                    path_effects=[
+                        pe.SimpleLineShadow(shadow_color="black"),
+                        pe.Normal(),
+                    ],
+                    linewidth=3,
+                    zorder=-1,
+                )
+
 
         for sensor in env.sensors.values():
             ax.plot(
@@ -202,6 +246,7 @@ class Renderer:
                 fontsize="8",
             )
 
+
         # Show border, hide ticks
         ax.get_xaxis().set_ticks([])
         ax.get_yaxis().set_ticks([])
@@ -218,7 +263,7 @@ class Renderer:
         """Render the info dashboard."""
         aori_vals, aosi_vals, ue_data, sensor_data = [], [], 0.0, 0.0
         for job in env.job_tracker.completed_jobs:
-            if job.entity_type == 'UE':
+            if job.job_type == 'UE':
                 if job.aori is not None: aori_vals.append(job.aori)
                 if job.aosi is not None: aosi_vals.append(job.aosi)
                 ue_data += job.data_size
@@ -252,7 +297,10 @@ class Renderer:
     def render_bw_allocation(self, env, ax: plt.Axes) -> None:
         bw_splits = env.metrics.step_totals['bw_split']
         time = np.arange(len(bw_splits))
-        ax.plot(time, bw_splits, linewidth=1, color="blue", label="UE")
+        if env.config['environment']['num_ues'] != 0:
+            ax.plot(time, bw_splits, linewidth=1, color="blue", label="UE")
+        else:
+            ax.plot(time, bw_splits, linewidth=1, color="purple", label="ISAC")
         ax.plot(time, 1 - np.array(bw_splits), linewidth=1, color="green", label="Sensor")
 
         ax.set_xlabel("Time")
@@ -264,13 +312,73 @@ class Renderer:
     def render_comp_allocation(self, env, ax: plt.Axes) -> None:
         comp_splits = env.metrics.step_totals['comp_split']
         time = np.arange(len(comp_splits))
-        ax.plot(time, comp_splits, linewidth=1, color="blue", label="UE")
+        if env.config['environment']['num_ues'] != 0:
+            ax.plot(time, comp_splits, linewidth=1, color="blue", label="UE")
+        else:
+            ax.plot(time, comp_splits, linewidth=1, color="purple", label="ISAC")
         ax.plot(time, 1 - np.array(comp_splits), linewidth=1, color="green", label="Sensor")
 
         ax.set_xlabel("Time")
         ax.set_ylabel("Comp. Allocation")
         ax.set_xlim([0.0, env.EP_MAX_TIME])
         ax.set_ylim([0.0, 1.0])
+        ax.legend(loc="upper right", fontsize=8)
+    
+    def render_tx_queue_evolution(self, env, ax: plt.Axes) -> None:
+        ue_queue = env.metrics.step_totals['ue_tx_queue_jobs']
+        sensor_queue = env.metrics.step_totals['sensor_tx_queue_jobs']
+        isac_queue = env.metrics.step_totals['isac_tx_queue_jobs']
+
+        time = np.arange(len(ue_queue))
+
+        if env.config['environment']['num_ues'] != 0:
+            ax.plot(time, ue_queue, linewidth=1, color="blue", label="UE")
+        else:
+            ax.plot(time, isac_queue, linewidth=1, color="purple", label="ISAC")
+
+        ax.plot(time, sensor_queue, linewidth=1, color="green", label="Sensor")
+            
+        ax.set_xlabel("Time")
+        ax.set_ylabel("TxQueue Jobs")
+        ax.set_xlim([0.0, env.EP_MAX_TIME])
+        
+        max_val = max(max(ue_queue) if ue_queue else 0, max(sensor_queue) if sensor_queue else 0)
+        ax.set_ylim([0.0, max(10, max_val * 1.1)]) 
+        
+        ax.legend(loc="upper right", fontsize=8)
+
+    def render_mec_queue_evolution(self, env, ax: plt.Axes) -> None:
+        communication_queue = env.metrics.step_per_bs['ue_proc_queue_jobs']
+        sensing_queue = env.metrics.step_per_bs['sensor_proc_queue_jobs']
+
+        if not communication_queue:
+            return
+        
+        num_steps = len(next(iter(communication_queue.values())))
+        if num_steps == 0:
+            return
+
+        time = np.arange(num_steps)
+        total_ue_mec = np.zeros(num_steps)
+        total_sensor_mec = np.zeros(num_steps)
+        
+        for q_list in communication_queue.values():
+            total_ue_mec += np.array(q_list)
+        
+        for q_list in sensing_queue.values():
+            total_sensor_mec += np.array(q_list)
+
+        
+        ax.plot(time, total_ue_mec, linewidth=1, color="blue" if env.config['environment']['num_ues'] != 0 else 'purple', label="Communication")
+        ax.plot(time, total_sensor_mec, linewidth=1, color="green", label="Sensing")
+        
+        ax.set_xlabel("Time")
+        ax.set_ylabel("MEC Queue Jobs")
+        ax.set_xlim([0.0, env.EP_MAX_TIME])
+        
+        max_val = max(np.max(total_ue_mec), np.max(total_sensor_mec))
+        ax.set_ylim([0.0, max(10, max_val * 1.1)]) 
+        
         ax.legend(loc="upper right", fontsize=8)
 
     def close(self) -> None:

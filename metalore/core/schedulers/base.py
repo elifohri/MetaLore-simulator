@@ -10,7 +10,6 @@ import numpy as np
 
 from metalore.core.entities.base_station import BaseStation
 
-
 class Scheduler:
 
     def __init__(
