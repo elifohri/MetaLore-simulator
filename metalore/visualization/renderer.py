@@ -4,7 +4,6 @@ Renderer for MetaLore Simulator.
 Provides visualization using matplotlib and pygame.
 """
 
-import string
 import numpy as np
 import pygame
 from matplotlib import cm
@@ -149,9 +148,8 @@ class Renderer:
                 markeredgewidth=0.1,
                 color="black",
             )
-            bs_id = string.ascii_uppercase[bs.id]
             ax.annotate(
-                bs_id,
+                bs.id,
                 xy=(bs.x, bs.y),
                 xytext=(0, -25),
                 ha="center",
@@ -191,9 +189,8 @@ class Renderer:
                 markeredgewidth=0.1,
                 color="blue",
             )
-            sensor_id = string.ascii_uppercase[sensor.id]
             ax.annotate(
-                sensor_id,
+                sensor.id,
                 xy=(sensor.x, sensor.y),
                 xytext=(0, -15),
                 ha="center",
@@ -226,8 +223,8 @@ class Renderer:
                 sensor_data += job.data_size
         avg_aori = f"{sum(aori_vals)/len(aori_vals):.2f}" if aori_vals else "—"
         avg_aosi = f"{sum(aosi_vals)/len(aosi_vals):.2f}" if aosi_vals else "—"
-        total_ue = f"{ue_data:.2f}"
-        total_sensor = f"{sensor_data:.2f}"
+        total_ue = f"{ue_data / 8000:.1f} KB"
+        total_sensor = f"{sensor_data / 8000:.1f} KB"
 
         ax.get_xaxis().set_visible(False)
         ax.get_yaxis().set_visible(False)

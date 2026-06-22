@@ -56,10 +56,7 @@ class SmartCityHandler(Handler):
         discount_factor  = reward_cfg['discount_factor']
 
         # UE jobs fully processed this timestep
-        step_ue_jobs = [
-            job for job in env.job_tracker.step_completed_jobs
-            if job.entity_type == 'UE'
-        ]
+        step_ue_jobs = env.job_tracker.get_step_completed_ue_jobs()
 
         # Part 1: delay penalty — applied per job that exceeded the e2e threshold
         reward = sum(

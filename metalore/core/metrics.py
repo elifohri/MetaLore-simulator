@@ -84,6 +84,9 @@ class MetricsTracker:
             "mean_aoi":             self._safe_mean([j.aoi  for j in job_tracker.completed_jobs if j.entity_type == 'UE' and j.aoi  is not None]),
             "mean_aori":            self._safe_mean([j.aori for j in job_tracker.completed_jobs if j.entity_type == 'UE' and j.aori is not None]),
             "mean_aosi":            self._safe_mean([j.aosi for j in job_tracker.completed_jobs if j.entity_type == 'UE' and j.aosi is not None]),
+            "timely_completion_rate": self._compute_timely_rate(job_tracker),
+            "mean_residual_jobs_at_departure": self._safe_mean(job_tracker.residual_jobs_at_departure),
+            **self._compute_queue_stats(),
         }
 
         fields = ["jobs_generated", "jobs_transmitted", "jobs_processed", "bits_transmitted", "cycles_processed"]
@@ -120,6 +123,46 @@ class MetricsTracker:
     @staticmethod
     def _safe_mean(values) -> Optional[float]:
         return sum(values) / len(values) if values else None
+
+    def _compute_queue_stats(self) -> dict:
+        """Episode-level summaries of BS processing queue lengths (summed across all BSs)."""
+        n = self.num_steps
+        if n == 0:
+            empty = {'mean': None, 'peak': None, 'final': None}
+            return {f'{p}_ue_proc_queue': v for p, v in empty.items()} | \
+                   {f'{p}_sensor_proc_queue': v for p, v in empty.items()}
+
+        ue_ts = [
+            sum(self.step_per_bs["ue_proc_queue_jobs"][bs_id][t]
+                for bs_id in self.step_per_bs["ue_proc_queue_jobs"])
+            for t in range(n)
+        ]
+        sensor_ts = [
+            sum(self.step_per_bs["sensor_proc_queue_jobs"][bs_id][t]
+                for bs_id in self.step_per_bs["sensor_proc_queue_jobs"])
+            for t in range(n)
+        ]
+
+        return {
+            "mean_ue_proc_queue":     self._safe_mean(ue_ts),
+            "peak_ue_proc_queue":     max(ue_ts),
+            "final_ue_proc_queue":    ue_ts[-1],
+            "mean_sensor_proc_queue": self._safe_mean(sensor_ts),
+            "peak_sensor_proc_queue": max(sensor_ts),
+            "final_sensor_proc_queue": sensor_ts[-1],
+        }
+
+    @staticmethod
+    def _compute_timely_rate(job_tracker) -> Optional[float]:
+        ue_completed = [j for j in job_tracker.completed_jobs if j.entity_type == 'UE']
+        if not ue_completed:
+            return None
+        timely = sum(
+            1 for j in ue_completed
+            if j.entity_id not in job_tracker.ue_extime_at_departure
+            or j.proc_end_at <= job_tracker.ue_extime_at_departure[j.entity_id]
+        )
+        return timely / len(ue_completed)
 
     def _record_topology(self, env) -> None:
         self.step_topology["ue_connections"].append({

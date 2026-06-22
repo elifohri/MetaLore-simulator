@@ -44,6 +44,7 @@ class MetaLoreEnv(gymnasium.Env):
         self.height = env_config['height']
         self.seed = env_config['seed']
         self.EP_MAX_TIME = env_config['max_steps']
+        self.timestep_duration = env_config['timestep_duration']
         self.reset_rng_episode = env_config['reset_rng_episode']
         self.render_mode = render_mode
         assert render_mode in self.metadata["render_modes"] + [None]
@@ -230,20 +231,22 @@ class MetaLoreEnv(gymnasium.Env):
 
         # 3. Transmit from entity tx queues → move completed jobs to BS proc queues
         for (bs, entity), rate in chain(self.datarates_ue.items(), self.datarates_sensor.items()):
-            bits_sent, done = transmit(entity.tx_queue, rate, timestep=self.time)
+            bits_sent, done = transmit(entity.tx_queue, rate, timestep=self.time, timestep_duration=self.timestep_duration)
             self.job_tracker.on_transmitted((entity.DEVICE_TYPE, entity.id), done, bits_sent)
             for job in done:
                 bs.proc_queues[job.entity_type].enqueue(job)
-        
+
         # 4. Process jobs at MEC servers (comp_split divides compute between UE and sensor jobs)
         for bs in self.stations.values():
             cycles, done = process(bs.proc_queues[UserEquipment.DEVICE_TYPE], bs.compute_capacity * comp_split, timestep=self.time,
-                ready_fn=lambda job: self.job_tracker.sensor_latest_processed_job.get(job.nearest_sensor_id) is not None)
-            self.job_tracker.on_processed(done, cycles)
+                ready_fn=lambda job: self.job_tracker.is_sensor_ready(job.nearest_sensor_id),
+                timestep_duration=self.timestep_duration)
             for job in done:
-                self.job_tracker.update_ue_sensor_sync(job)
+                job.sensor_snapshot_at = self.job_tracker.get_sensor_snapshot_time(job.nearest_sensor_id)
+            self.job_tracker.on_processed(done, cycles)
 
-            cycles, done = process(bs.proc_queues[Sensor.DEVICE_TYPE], bs.compute_capacity * (1 - comp_split), timestep=self.time)
+            cycles, done = process(bs.proc_queues[Sensor.DEVICE_TYPE], bs.compute_capacity * (1 - comp_split), timestep=self.time,
+                timestep_duration=self.timestep_duration)
             self.job_tracker.on_processed(done, cycles)
             for job in done:
                 self.job_tracker.update_ue_sensor_sync(job)
@@ -271,6 +274,11 @@ class MetaLoreEnv(gymnasium.Env):
         # Terminate existing connections for exiting entities (if mobile)
         leaving_ues = {ue for ue in self.active_ues if ue.extime <= self.time}
         for ue in leaving_ues:
+            residual = sum(
+                sum(1 for j in bs.proc_queues[UserEquipment.DEVICE_TYPE]._q if j.entity_id == ue.id)
+                for bs in self.stations.values()
+            )
+            self.job_tracker.on_ue_departed(ue.id, ue.extime, residual)
             ue.reset_queue()    # discard unfinished jobs for departed UEs
         for bs, ues in self.connections_ue.items():
             self.connections_ue[bs] = ues - leaving_ues

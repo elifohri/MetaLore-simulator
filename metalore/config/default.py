@@ -8,6 +8,7 @@ from copy import deepcopy
 from metalore.core.movement.random_waypoint import RandomWaypointMovement
 from metalore.core.movement.static import StaticMovement
 from metalore.core.arrival.no_departures import NoDeparture
+from metalore.core.arrival.dynamic import DynamicArrival
 from metalore.core.channels.okumura_hata import OkumuraHata
 from metalore.core.association.closest import ClosestAssociation
 from metalore.core.schedulers.resource_fair import ResourceFair
@@ -21,11 +22,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "environment": {
         "width": 200.0,                         # Area width in meters
         "height": 200.0,                        # Area height in meters
-        "max_steps": 100,                       # Maximum timesteps per episode
+        "max_steps": 100,                       # Maximum timesteps per episode (200 × 100ms = 20s)
+        "timestep_duration": 100e-3,            # Duration of one timestep in seconds (100ms = O-RAN Near-RT RIC period)
         "seed": 999,                            # Random seed (None for random)
         "reset_rng_episode": False,             # Reset RNG each episode for reproducibility
-        "num_ues": 3,                           # Number of user equipments
-        "num_sensors": 3,                       # Number of sensors
+        "num_ues": 15,                          # Number of user equipments
+        "num_sensors": 30,                      # Number of sensors
         "arrival_ue": NoDeparture,              # Arrival model for UEs
         "arrival_sensor": NoDeparture,          # Arrival model for sensors
         "movement_ue": RandomWaypointMovement,  # Movement model for UEs
@@ -40,11 +42,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 
     "bs": {
         "positions": [(100.0, 100.0)],          # List of (x, y) positions
-        "bandwidth": 100e6,                     # Total bandwidth in Hz (100 MHz)
-        "frequency": 3500,                      # Carrier frequency in MHz (3.5 GHz)
+        "bandwidth": 10e6,                      # Total bandwidth in Hz (10 MHz)
+        "frequency": 1500,                      # Carrier frequency in MHz (3.5 GHz)
         "tx_power": 40,                         # Transmission power in dBm
-        "height": 40,                           # Antenna height in meters
-        "compute_capacity": 100,                # MEC capacity in CPU cycles/second
+        "height": 10,                           # Antenna height in meters
+        "compute_capacity": 20e9,               # MEC capacity in CPU cycles/second (20 GHz)
     },
 
     "ue": {
@@ -70,14 +72,14 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
 
     "job_ue": {
-        "generation_probability": 0.7,          # Probability of generating job per timestep
-        "data_size_mean": 100.0,                # Mean job data size in bits
-        "compute_size_mean": 10.0,              # Mean computation requirement in CPU cycles
+        "generation_probability": 0.7,          # 1 job/step
+        "data_size_mean": 500_000,              # 500 Kbits
+        "compute_size_mean": 100_000_000,       # 100 Mcycles
     },
 
     "job_sensor": {
-        "data_size_mean": 70.0,                 # Mean sensor data size in bits
-        "compute_size_mean": 7.0,               # Mean computation requirement in CPU cycles
+        "data_size_mean": 250_000,              # 250 Kbits
+        "compute_size_mean": 50_000_000,        # 50 Mcycles
     },
 
     "scheduler": {
@@ -88,8 +90,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "reward": {
         "delay_penalty": -1.0,                  # Penalty per delayed packet
         "sync_base_reward": 10.0,               # Base reward for synchronization
-        "discount_factor": 0.9,                 # Discount for delay in reward
-        "e2e_delay_threshold": 2.0,             # Max acceptable e2e delay (timesteps)
+        "discount_factor": 0.9,                 # Discount for AoSI in sync reward
+        "e2e_delay_threshold": 5.0,             # Max acceptable e2e delay (timesteps = 500ms at 100ms/step)
     },
 
     "visualization": {

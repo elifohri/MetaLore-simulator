@@ -12,22 +12,24 @@ from metalore.core.jobs.job import Job
 from metalore.core.jobs.queue import ProcessQueue
 
 
-def process(queue: ProcessQueue, compute_capacity: float, timestep: int, ready_fn: Optional[Callable[[Job], bool]] = None) -> Tuple[float, List[Job]]:
+def process(queue: ProcessQueue, compute_capacity: float, timestep: int, ready_fn: Optional[Callable[[Job], bool]] = None, timestep_duration: float = 1.0) -> Tuple[float, List[Job]]:
     """
     Process jobs from the MEC queue for one timestep.
 
     Args:
-        queue:            The BS's processing queue (UE or sensor side).
-        compute_capacity: Compute rate in CPU cycles/second allocated to this queue.
-        timestep:         Current simulation timestep (used for job lifecycle timestamps).
-        ready_fn:         Job is only processed when ready_fn(job) returns True, 
-                          otherwise processing halts.
+        queue:              The BS's processing queue (UE or sensor side).
+        compute_capacity:   Compute rate in CPU cycles/second allocated to this queue.
+        timestep:           Current simulation timestep (used for job lifecycle timestamps).
+        ready_fn:           Job is only processed when ready_fn(job) returns True, otherwise processing halts.
+        timestep_duration:  Duration of one timestep in seconds (converts cycles/s to cycles/step).
 
     Returns:
         cycles_consumed:  Total CPU cycles consumed this timestep.
-        completed_jobs:   List of Job objects whose cycles_remaining reached 0
-                          (fully processed, end-to-end lifecycle complete).
+        completed_jobs:   List of Job objects whose cycles_remaining reached 0 (fully processed, end-to-end lifecycle complete).
     """
+
+    # Convert cycles/second → cycles available this timestep
+    compute_capacity = compute_capacity * timestep_duration
 
     cycles_consumed = 0.0
     completed: List[Job] = []

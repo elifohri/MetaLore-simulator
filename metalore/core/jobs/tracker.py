@@ -12,7 +12,7 @@ import os
 import pandas as pd
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from metalore.core.jobs.job import Job
 
@@ -51,6 +51,10 @@ class JobTracker:
 
         # Latest processed sensor job per sensor
         self.sensor_latest_processed_job: Dict[int, Job] = {}
+
+        # Departure tracking
+        self.ue_extime_at_departure: Dict[int, int] = {}
+        self.residual_jobs_at_departure: List[int] = []
 
     def begin_step(self) -> None:
         """Reset per-step counters at the start of each timestep."""
@@ -95,14 +99,28 @@ class JobTracker:
             self.step_per_entity[key].cycles_processed += job.compute_size
             self.ep_per_entity[key].cycles_processed += job.compute_size
 
+    def on_ue_departed(self, ue_id: int, extime: int, residual_count: int) -> None:
+        """Record departure stats for a UE: its scheduled extime and how many jobs it left behind."""
+        self.ue_extime_at_departure[ue_id] = extime
+        self.residual_jobs_at_departure.append(residual_count)
+
     def update_ue_sensor_sync(self, job: Job) -> None:
-        """Update sensor snapshot timestamp on UE jobs; track latest sensor job."""
-        if job.entity_type == 'UE':
-            sensor_job = self.sensor_latest_processed_job.get(job.nearest_sensor_id)
-            if sensor_job is not None:
-                job.sensor_snapshot_at = sensor_job.generated_at
-        elif job.entity_type == 'SENSOR':
+        """Track latest processed sensor job for sensor-UE synchronization."""
+        if job.entity_type == 'SENSOR':
             self.sensor_latest_processed_job[job.entity_id] = job
+
+    def is_sensor_ready(self, sensor_id: int) -> bool:
+        """Return True if at least one job from this sensor has been processed."""
+        return self.sensor_latest_processed_job.get(sensor_id) is not None
+
+    def get_sensor_snapshot_time(self, sensor_id: int) -> Optional[int]:
+        """Return the generation time of the latest processed job for this sensor, or None."""
+        sensor_job = self.sensor_latest_processed_job.get(sensor_id)
+        return sensor_job.generated_at if sensor_job is not None else None
+
+    def get_step_completed_ue_jobs(self) -> List[Job]:
+        """Return completed UE jobs from this timestep."""
+        return [job for job in self.step_completed_jobs if job.entity_type == 'UE']
 
     def to_dataframe(self) -> pd.DataFrame:
         """Return a DataFrame with one row per completed job and all lifecycle columns."""
