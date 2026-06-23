@@ -2,6 +2,7 @@
 Default Configuration for MetaLore.
 """
 
+import random
 from typing import Dict, Any
 from copy import deepcopy
 
@@ -15,6 +16,7 @@ from metalore.core.schedulers.resource_fair import ResourceFair
 from metalore.core.schedulers.round_robin import RoundRobin
 from metalore.handlers.smart_city import SmartCityHandler
 from metalore.utils.logger import SimulationLogger
+from metalore.config.profiles import TRAFFIC_PROFILES
 
 
 DEFAULT_CONFIG: Dict[str, Any] = {
@@ -26,8 +28,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "timestep_duration": 100e-3,            # Duration of one timestep in seconds (100ms = O-RAN Near-RT RIC period)
         "seed": 999,                            # Random seed (None for random)
         "reset_rng_episode": False,             # Reset RNG each episode for reproducibility
-        "num_ues": 15,                          # Number of user equipments
-        "num_sensors": 30,                      # Number of sensors
+        "num_ues": 12,                          # Number of user equipments
+        "num_sensors": 12,                      # Number of sensors
         "arrival_ue": NoDeparture,              # Arrival model for UEs
         "arrival_sensor": NoDeparture,          # Arrival model for sensors
         "movement_ue": RandomWaypointMovement,  # Movement model for UEs
@@ -42,11 +44,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 
     "bs": {
         "positions": [(100.0, 100.0)],          # List of (x, y) positions
-        "bandwidth": 10e6,                      # Total bandwidth in Hz (10 MHz)
-        "frequency": 1500,                      # Carrier frequency in MHz (3.5 GHz)
+        "bandwidth": 100e6,                     # Total bandwidth in Hz (100 MHz)
+        "frequency": 1500,                      # Carrier frequency in MHz (1.5 GHz)
         "tx_power": 40,                         # Transmission power in dBm
         "height": 10,                           # Antenna height in meters
-        "compute_capacity": 20e9,               # MEC capacity in CPU cycles/second (20 GHz)
+        "compute_capacity": 100e9,              # MEC capacity in CPU cycles/second (100 GHz)
     },
 
     "ue": {
@@ -72,14 +74,14 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
 
     "job_ue": {
-        "generation_probability": 0.7,          # 1 job/step
-        "data_size_mean": 500_000,              # 500 Kbits
-        "compute_size_mean": 100_000_000,       # 100 Mcycles
+        "generation_probability": 0.8,          # probability of generating 1 job/timestep
+        "data_size_mean": 1_000_000,            # 1 Mbit
+        "compute_size_mean": 1_000_000_000,     # 1 Gcycle
     },
 
     "job_sensor": {
-        "data_size_mean": 250_000,              # 250 Kbits
-        "compute_size_mean": 50_000_000,        # 50 Mcycles
+        "data_size_mean": 500_000,              # 500 Kbits
+        "compute_size_mean": 300_000_000,       # 300 Mcycles
     },
 
     "scheduler": {
@@ -191,3 +193,41 @@ def multi_cell_config() -> Dict[str, Any]:
     config['environment']['num_ues'] = 15
     config['environment']['num_sensors'] = 20
     return config
+
+
+def dynamic_traffic_config(profile: str = None) -> Dict[str, Any]:
+    """Config with a fixed traffic profile. Picks randomly from TRAFFIC_PROFILES if none given."""
+    if profile is None:
+        profile = random.choice(list(TRAFFIC_PROFILES.keys()))
+    config = default_config()
+    config['environment']['arrival_ue']        = DynamicArrival.with_profile(profile, profiles=TRAFFIC_PROFILES)
+    config['environment']['num_ues']           = TRAFFIC_PROFILES[profile].pool_size
+    config['job_ue']['generation_probability'] = TRAFFIC_PROFILES[profile].job_gen_prob
+    config['job_ue']['data_size_mean']         = TRAFFIC_PROFILES[profile].job_data_size
+    config['job_ue']['compute_size_mean']      = TRAFFIC_PROFILES[profile].job_compute_size
+    return config
+
+
+def low_traffic_config() -> Dict[str, Any]:
+    """Sparse load: ~4-6 concurrent UEs, short sojourn (~30 steps)."""
+    return dynamic_traffic_config('low')
+
+def medium_traffic_config() -> Dict[str, Any]:
+    """Moderate load: ~9 concurrent UEs, sojourn fills most of episode."""
+    return dynamic_traffic_config('medium')
+
+def high_traffic_config() -> Dict[str, Any]:
+    """Heavy load: ~12 concurrent UEs, early arrivals, long sojourn (~80 steps)."""
+    return dynamic_traffic_config('high')
+
+def ramp_up_traffic_config() -> Dict[str, Any]:
+    """Growing load: arrivals spread across the second two-thirds of the episode."""
+    return dynamic_traffic_config('ramp_up')
+
+def ramp_down_traffic_config() -> Dict[str, Any]:
+    """Draining load: early arrivals that thin out by episode end."""
+    return dynamic_traffic_config('ramp_down')
+
+def burst_traffic_config() -> Dict[str, Any]:
+    """Bursty load: quiet background with a Gaussian surge at midpoint."""
+    return dynamic_traffic_config('burst')
