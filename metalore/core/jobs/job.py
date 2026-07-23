@@ -6,7 +6,7 @@ A job follows two phases:
   2. Processing: computed at the MEC server.
 """
 
-from typing import Optional
+from typing import Optional, Tuple
 
 
 class Job:
@@ -16,6 +16,7 @@ class Job:
         job_id: int,
         entity_id: int,
         entity_type: str,
+        job_type: str,
         data_size: float,
         compute_size: float,
         generated_at: int,
@@ -24,6 +25,7 @@ class Job:
         self._id = job_id
         self._entity_id = entity_id
         self._entity_type = entity_type
+        self._job_type = job_type
         self._data_size = data_size
         self._compute_size = compute_size
         self._generated_at = generated_at
@@ -46,6 +48,13 @@ class Job:
         self.nearest_sensor_id: Optional[int] = nearest_sensor_id
         self.sensor_snapshot_at: Optional[int] = None
 
+        # Zone the vehicle is inside at sensing time (ISAC_SENSING and SENSOR jobs only)
+        self.sensed_zone_idx: Optional[Tuple[int, int]] = None
+
+        # Zone the vehicle is inside when issuing a twinning request (ISAC_COMM jobs only)
+        self.requested_zone_idx: Optional[Tuple[int, int]] = None
+        self.requested_zone_last_sensed_at: Optional[int] = None
+
 
     @property
     def id(self) -> int:
@@ -56,6 +65,11 @@ class Job:
     def entity_id(self) -> int:
         """ID of the entity that generated this job."""
         return self._entity_id
+
+    @property
+    def job_type(self) -> str:
+        """Operation type of this job (e.g. 'ISAC_SENSING', 'ISAC_COMM', 'UE', 'SENSOR')."""
+        return self._job_type
 
     @property
     def entity_type(self) -> str:
@@ -121,10 +135,10 @@ class Job:
 
     @property
     def aosi(self) -> Optional[int]:
-        """Age of Sensor Information: sensor data age relative to job birth."""
-        if self.sensor_snapshot_at is None:
+        """Age of Sensor Information: how stale the zone data was when the twinning request was issued."""
+        if self.requested_zone_last_sensed_at is None or self.requested_zone_last_sensed_at < 0:
             return None
-        return abs(self.sensor_snapshot_at - self._generated_at)
+        return abs(self._generated_at - self.requested_zone_last_sensed_at)
 
     def __repr__(self) -> str:
         return (

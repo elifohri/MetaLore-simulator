@@ -16,7 +16,7 @@ from typing import Dict, List, Tuple
 
 from metalore.core.jobs.job import Job
 
-EntityKey = Tuple[str, int]  # (entity_type, entity_id)
+EntityKey = Tuple[str, str, int]  # (entity_type, job_type, entity_id)
 
 
 @dataclass
@@ -60,34 +60,35 @@ class JobTracker:
 
     def on_generated(self, job: Job) -> None:
         """Record that a job was generated this step."""
-        key = (job.entity_type, job.entity_id)
+        key = (job.entity_type, job.job_type, job.entity_id)
         self.step_totals.jobs_generated += 1
         self.ep_totals.jobs_generated += 1
         self.step_per_entity[key].jobs_generated += 1
         self.ep_per_entity[key].jobs_generated += 1
 
-    def on_transmitted(self, entity_key: EntityKey, jobs: List[Job], bits: float) -> None:
+    def on_transmitted(self, jobs: List[Job], bits: float) -> None:
         """Record transmission progress for one entity this step."""
         n = len(jobs)
         self.step_totals.jobs_transmitted += n
         self.ep_totals.jobs_transmitted += n
         self.step_totals.bits_transmitted += bits
         self.ep_totals.bits_transmitted += bits
-        self.step_per_entity[entity_key].jobs_transmitted += n
-        self.ep_per_entity[entity_key].jobs_transmitted += n
-        self.step_per_entity[entity_key].bits_transmitted += bits
-        self.ep_per_entity[entity_key].bits_transmitted += bits
+        for job in jobs:
+            key = (job.entity_type, job.job_type, job.entity_id)    
+            self.step_per_entity[key].jobs_transmitted += 1
+            self.ep_per_entity[key].jobs_transmitted += 1
+            self.step_per_entity[key].bits_transmitted += job.data_size
+            self.ep_per_entity[key].bits_transmitted += job.data_size
 
     def on_processed(self, jobs: List[Job], cycles: float) -> None:
-        """Record that `jobs` were fully processed consuming `cycles` compute cycles."""
+        """Record that `jobs` that are fully processed consuming compute cycles."""
         n = len(jobs)
         self.step_totals.jobs_processed += n
         self.ep_totals.jobs_processed += n
         self.step_totals.cycles_processed += cycles
         self.ep_totals.cycles_processed += cycles
-
         for job in jobs:
-            key = (job.entity_type, job.entity_id)
+            key = (job.entity_type, job.job_type, job.entity_id)
             self.completed_jobs.append(job)
             self.step_completed_jobs.append(job)
             self.step_per_entity[key].jobs_processed += 1
@@ -111,6 +112,7 @@ class JobTracker:
                 "job_id":             job.id,
                 "entity_id":          job.entity_id,
                 "entity_type":        job.entity_type,
+                "job_type":           job.job_type,
                 "data_size":          job.data_size,
                 "compute_size":       job.compute_size,
                 "generated_at":       job.generated_at,
@@ -131,7 +133,7 @@ class JobTracker:
             for job in self.completed_jobs
         ]
         columns = [
-            "job_id", "entity_id", "entity_type", "data_size", "compute_size",
+            "job_id", "entity_id", "entity_type", "job_type", "data_size", "compute_size",
             "generated_at", "tx_start_at", "tx_end_at", "proc_start_at", "proc_end_at",
             "tx_queue_wait", "tx_duration", "proc_queue_wait", "proc_duration",
             "nearest_sensor_id", "sensor_snapshot_at", "aoi", "aori", "aosi",

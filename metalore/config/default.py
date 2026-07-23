@@ -5,6 +5,7 @@ Default Configuration for MetaLore.
 from typing import Dict, Any
 from copy import deepcopy
 
+from metalore.core.arrival.random_vehicle_count import RandomVehicleCount
 from metalore.core.movement.random_waypoint import RandomWaypointMovement
 from metalore.core.movement.static import StaticMovement
 from metalore.core.arrival.no_departures import NoDeparture
@@ -13,38 +14,43 @@ from metalore.core.association.closest import ClosestAssociation
 from metalore.core.schedulers.resource_fair import ResourceFair
 from metalore.core.schedulers.round_robin import RoundRobin
 from metalore.handlers.smart_city import SmartCityHandler
+from metalore.handlers.smart_city_v2 import SmartCityHandlerV2
 from metalore.utils.logger import SimulationLogger
 
 
 DEFAULT_CONFIG: Dict[str, Any] = {
 
     "environment": {
-        "width": 200.0,                         # Area width in meters
-        "height": 200.0,                        # Area height in meters
-        "max_steps": 100,                       # Maximum timesteps per episode
-        "seed": 999,                            # Random seed (None for random)
-        "reset_rng_episode": False,             # Reset RNG each episode for reproducibility
-        "num_ues": 3,                           # Number of user equipments
-        "num_sensors": 3,                       # Number of sensors
-        "arrival_ue": NoDeparture,              # Arrival model for UEs
-        "arrival_sensor": NoDeparture,          # Arrival model for sensors
-        "movement_ue": RandomWaypointMovement,  # Movement model for UEs
-        "movement_sensor": StaticMovement,      # Movement model for sensors
-        "channel": OkumuraHata,                 # Channel model
-        "association": ClosestAssociation,      # Device association model
-        "scheduler_ue": ResourceFair,           # Resource scheduler for UEs
-        "scheduler_sensor": ResourceFair,       # Resource scheduler for sensors
-        "handler": SmartCityHandler,            # Handler to use for RL formulation
-        "logger": SimulationLogger,             # Logger for logging simulation steps
+        "width": 200.0,                                 # Area width in meters
+        "height": 200.0,                                # Area height in meters
+        "max_steps": 200,                               # Maximum timesteps per episode
+        "seed": 8,                                      # Random seed (None for random)
+        "reset_rng_episode": False,                     # Reset RNG each episode for reproducibility
+        "num_ues": 3,                                   # Number of user equipments
+        "num_sensors": 8,                               # Number of sensors
+        "num_isac_vehicles": 0,                         # Number of ISAC-capable vehicles
+        "arrival_ue": NoDeparture,                      # Arrival model for UEs
+        "arrival_sensor": NoDeparture,                  # Arrival model for sensors
+        "arrival_vehicle": NoDeparture,                 # Arrival model for ISAC vehicles
+        "movement_ue": RandomWaypointMovement,          # Movement model for UEs
+        "movement_sensor": StaticMovement,              # Movement model for sensors
+        "movement_vehicle": RandomWaypointMovement,     # Movement model for ISAC vehicles
+        "channel": OkumuraHata,                         # Channel model
+        "association": ClosestAssociation,              # Device association model
+        "scheduler_ue": ResourceFair,                   # Resource scheduler for UEs
+        "scheduler_sensor": ResourceFair,               # Resource scheduler for sensors
+        "scheduler_vehicle": ResourceFair,              # Resource scheduler for ISAC vehicles
+        "handler": SmartCityHandler,                    # Handler to use for RL formulation
+        "logger": SimulationLogger,                     # Logger for logging simulation steps
     },
 
     "bs": {
         "positions": [(100.0, 100.0)],          # List of (x, y) positions
         "bandwidth": 100e6,                     # Total bandwidth in Hz (100 MHz)
-        "frequency": 3500,                      # Carrier frequency in MHz (3.5 GHz)
+        "frequency": 1500,                      # Carrier frequency in MHz (1.5 GHz)
         "tx_power": 40,                         # Transmission power in dBm
         "height": 40,                           # Antenna height in meters
-        "compute_capacity": 100,                # MEC capacity in CPU cycles/second
+        "compute_capacity": 100e9,              # MEC capacity in CPU cycles/second (100 GHz)
     },
 
     "ue": {
@@ -59,7 +65,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "height": 1.5,                          # Antenna height in meters
         "snr_threshold": 2e-8,                  # Minimum SNR for connectivity
         "noise": 1e-9,                          # Receiver noise power in Watts
-        "sensing_range": 40.0,                  # Detection radius in meters
+        "sensing_range": 10.0,                  # Detection radius in meters
         "update_interval": 1,                   # Timesteps between data transmissions
     },
 
@@ -71,13 +77,36 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 
     "job_ue": {
         "generation_probability": 0.7,          # Probability of generating job per timestep
-        "data_size_mean": 100.0,                # Mean job data size in bits
-        "compute_size_mean": 10.0,              # Mean computation requirement in CPU cycles
+        "data_size_mean": 10.0,                # Mean job data size in bits
+        "compute_size_mean": 1e9,               # Mean computation requirement in CPU cycles
     },
 
     "job_sensor": {
-        "data_size_mean": 70.0,                 # Mean sensor data size in bits
-        "compute_size_mean": 7.0,               # Mean computation requirement in CPU cycles
+        "data_size_mean": 30.0,                 # Mean sensor data size in bits (rich env sensing for digital twin)
+        "compute_size_mean": 3e9,               # Mean computation requirement in CPU cycles (3D reconstruction, map fusion)
+    },
+
+    "isac_vehicle": {
+        "velocity": 1.0,                        # Movement speed in m/s
+        "height": 1.5,                          # Antenna height in meters
+        "snr_threshold": 2e-8,                  # Minimum SNR for connectivity
+        "noise": 1e-9,                          # Receiver noise power in Watts
+        "sensing_range": 10.0,                  # Radar detection radius in meters
+    },
+
+    "zones": {
+        "num_zones_x": 10,                      # Number of zone columns
+        "num_zones_y": 10,                      # Number of zone rows
+    },
+
+    "job_isac_sensing": {
+        "data_size_mean": 30.0,                 # Mean sensing observation data size in bits (radar upload, heaviest uplink)
+        "compute_size_mean": 3e9,               # Mean computation requirement for twin update in CPU cycles (radar signal processing)
+    },
+
+    "job_isac_comm": {
+        "data_size_mean": 30.0,                 # Mean service request data size in bits (small query via same RF)
+        "compute_size_mean": 3e9,               # Mean computation requirement for service request in CPU cycles (light twin lookup)
     },
 
     "scheduler": {
@@ -90,6 +119,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "sync_base_reward": 10.0,               # Base reward for synchronization
         "discount_factor": 0.9,                 # Discount for delay in reward
         "e2e_delay_threshold": 2.0,             # Max acceptable e2e delay (timesteps)
+        "coverage_weight": 2.0,                 # Per-step bonus weight for zone coverage fraction (SmartCityHandlerV2)
     },
 
     "visualization": {
@@ -97,6 +127,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "show_connections": True,               # Draw UE-Sensor connections
         "show_labels": True,                    # Show entity ID labels
         "figsize": (10, 10),                    # Figure size in inches
+    },
+
+    "dynamic_traffic": {
+        "min_vehicles": 10,                     # Minimum number of active vehicles
+        "max_vehicles": 40,                     # Maximum number of active vehicles
     },
 
 }
@@ -188,4 +223,14 @@ def multi_cell_config() -> Dict[str, Any]:
     ]
     config['environment']['num_ues'] = 15
     config['environment']['num_sensors'] = 20
+    return config
+
+def isac_vehicle_config() -> Dict[str, Any]:
+    """Configuration for ISAC-capable vehicles."""
+    config = default_config()
+    config['environment']['num_ues'] = 0
+    config['environment']['num_isac_vehicles'] = 40
+    config['environment']['num_sensors'] = 10
+    config['environment']['arrival_vehicle'] = RandomVehicleCount
+    config['handler'] = SmartCityHandlerV2
     return config

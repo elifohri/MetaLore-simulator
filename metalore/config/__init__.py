@@ -3,6 +3,7 @@ from metalore.config.default import (
     merge_config, 
     small_config, 
     large_config, 
-    multi_cell_config, 
     mobile_sensor_config,
+    multi_cell_config, 
+    isac_vehicle_config,
 )

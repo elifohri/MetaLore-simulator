@@ -24,15 +24,17 @@ class MetricsTracker:
         """Clear all recorded metrics for a new episode."""
 
         self.step_totals: Dict[str, List] = {
-            "time": [], "num_active_ues": [], "num_active_sensors": [],
-            "ue_tx_queue_bits": [], "sensor_tx_queue_bits": [],
-            "ue_tx_queue_jobs": [], "sensor_tx_queue_jobs": [],
+            "time": [], "num_active_ues": [], "num_active_sensors": [], "num_active_isac_vehicles": [],
+            "ue_tx_queue_bits": [], "sensor_tx_queue_bits": [], "isac_tx_queue_bits": [],
+            "ue_tx_queue_jobs": [], "sensor_tx_queue_jobs": [], "isac_tx_queue_jobs": [],
             "jobs_generated": [], "jobs_transmitted": [], "jobs_processed": [],
             "bits_transmitted": [], "cycles_processed": [],
-            "ue_bits_transmitted": [], "sensor_bits_transmitted": [],
+            "ue_bits_transmitted": [], "sensor_bits_transmitted": [], 
+            "isac_comm_bits_transmitted": [], "isac_sensing_bits_transmitted": [],
             "ue_cycles_processed": [], "sensor_cycles_processed": [],
+            "isac_sensing_cycles_processed": [], "isac_comm_cycles_processed": [],
             "bw_split": [], "comp_split": [], "reward": [], "observation": [],
-            "mean_aoi": [], "mean_aori": [], "mean_aosi": [],
+            "mean_aori": [], "mean_aosi": [],
         }
 
         self.step_per_entity: Dict[str, defaultdict] = {
@@ -44,12 +46,12 @@ class MetricsTracker:
         }
 
         self.step_topology: Dict[str, List] = {
-            "ue_connections": [], "sensor_connections": [], "nearest_sensor": [],
+            "ue_connections": [], "sensor_connections": [], "isac_connections": [], "nearest_sensor": [],
         }
 
         self.step_per_bs: Dict[str, defaultdict] = {
             k: defaultdict(list) for k in (
-                "ue_connections", "sensor_connections",
+                "ue_connections", "sensor_connections", "isac_connections",
                 "ue_proc_queue_jobs", "sensor_proc_queue_jobs",
                 "ue_proc_queue_cycles", "sensor_proc_queue_cycles",
             )
@@ -81,9 +83,8 @@ class MetricsTracker:
             "cycles_processed":     ep.cycles_processed,
             "job_completion_rate":  ep.jobs_processed / ep.jobs_generated if ep.jobs_generated > 0 else 0.0,
             "total_reward":         sum(st["reward"]) if st["reward"] else None,
-            "mean_aoi":             self._safe_mean([j.aoi  for j in job_tracker.completed_jobs if j.entity_type == 'UE' and j.aoi  is not None]),
-            "mean_aori":            self._safe_mean([j.aori for j in job_tracker.completed_jobs if j.entity_type == 'UE' and j.aori is not None]),
-            "mean_aosi":            self._safe_mean([j.aosi for j in job_tracker.completed_jobs if j.entity_type == 'UE' and j.aosi is not None]),
+            "mean_aori":            self._safe_mean([j.aori for j in job_tracker.completed_jobs if j.job_type == 'ISAC_COMM' and j.aori is not None]),
+            "mean_aosi":            self._safe_mean([j.aosi for j in job_tracker.completed_jobs if j.job_type == 'ISAC_COMM' and j.aosi is not None]),
         }
 
         fields = ["jobs_generated", "jobs_transmitted", "jobs_processed", "bits_transmitted", "cycles_processed"]
@@ -130,6 +131,10 @@ class MetricsTracker:
             bs.id: sorted(s.id for s in sensors)
             for bs, sensors in env.connections_sensor.items() if sensors
         })
+        self.step_topology["isac_connections"].append({
+            bs.id: sorted(v.id for v in vehicles)
+            for bs, vehicles in env.connections_isac.items() if vehicles
+        })
         self.step_topology["nearest_sensor"].append({
             ue.id: sensor.id
             for ue, sensor in env.association.nearest_sensor.items()
@@ -139,20 +144,30 @@ class MetricsTracker:
         for bs in env.stations.values():
             self.step_per_bs["ue_connections"][bs.id].append(len(env.connections_ue[bs]))
             self.step_per_bs["sensor_connections"][bs.id].append(len(env.connections_sensor[bs]))
+            self.step_per_bs["isac_connections"][bs.id].append(len(env.connections_isac[bs]))
             self.step_per_bs["ue_proc_queue_jobs"][bs.id].append(bs.proc_queues['UE'].length)
             self.step_per_bs["sensor_proc_queue_jobs"][bs.id].append(bs.proc_queues['SENSOR'].length)
             self.step_per_bs["ue_proc_queue_cycles"][bs.id].append(bs.proc_queues['UE'].total_cycles)
             self.step_per_bs["sensor_proc_queue_cycles"][bs.id].append(bs.proc_queues['SENSOR'].total_cycles)
 
     def _record_per_entity(self, env, jt) -> None:
-        datarate_map = {('UE', ue.id): r for (_, ue), r in env.datarates_ue.items()}
-        datarate_map.update({('SENSOR', s.id): r for (_, s), r in env.datarates_sensor.items()})
-        all_entities = (
-            [('UE',     eid, e.tx_queue) for eid, e in env.users.items()] +
-            [('SENSOR', eid, e.tx_queue) for eid, e in env.sensors.items()]
+        datarate_map = {}
+        for (_, ue), r in env.datarates_ue.items():
+            datarate_map[('UE', 'UE', ue.id)] = r
+        for (_, s), r in env.datarates_sensor.items():
+            datarate_map[('SENSOR', 'SENSOR', s.id)] = r
+        for (_, v), r in env.datarates_isac.items():
+            datarate_map[('ISAC', 'ISAC_COMM', v.id)] = r
+
+        all_entries = (
+            [('UE',     'UE',           eid, e.tx_queue) for eid, e in env.users.items()] +
+            [('SENSOR', 'SENSOR',       eid, e.tx_queue) for eid, e in env.sensors.items()] +
+            [('ISAC',   'ISAC_SENSING', vid, v.tx_queue) for vid, v in env.isac_vehicles.items()] +
+            [('ISAC',   'ISAC_COMM',    vid, v.tx_queue) for vid, v in env.isac_vehicles.items()]
         )
-        for entity_type, eid, tx_queue in all_entities:
-            key    = (entity_type, eid)
+
+        for entity_type, job_type, eid, tx_queue in all_entries:
+            key    = (entity_type, job_type, eid)
             counts = jt.step_per_entity[key]
             self.step_per_entity["datarate"][key].append(datarate_map.get(key, float('nan')))
             self.step_per_entity["tx_queue_jobs"][key].append(tx_queue.length)
@@ -167,41 +182,53 @@ class MetricsTracker:
 
         # Per-type bits/cycles (single pass over step_per_entity)
         ue_bits = ue_cycles = sensor_bits = sensor_cycles = 0.0
-        for (etype, _), counts in jt.step_per_entity.items():
-            if etype == 'UE':
+        isac_comm_bits = isac_comm_cycles = isac_sensing_bits = isac_sensing_cycles = 0.0
+        for (_, job_type, _), counts in jt.step_per_entity.items():
+            if job_type == 'UE':
                 ue_bits   += counts.bits_transmitted
                 ue_cycles += counts.cycles_processed
-            else:
+            elif job_type == 'SENSOR':
                 sensor_bits   += counts.bits_transmitted
                 sensor_cycles += counts.cycles_processed
+            elif job_type == 'ISAC_COMM':
+                isac_comm_bits   += counts.bits_transmitted
+                isac_comm_cycles += counts.cycles_processed
+            elif job_type == 'ISAC_SENSING':
+                isac_sensing_bits    += counts.bits_transmitted
+                isac_sensing_cycles  += counts.cycles_processed
 
-        # AoI over UE jobs completed this step
-        step_ue_jobs = [j for j in jt.step_completed_jobs if j.entity_type == 'UE']
+        step_isac_comm_jobs    = [j for j in jt.step_completed_jobs if j.job_type == 'ISAC_COMM']
 
         updates = {
-            "time":                     env.time,
-            "num_active_ues":           len(env.active_ues),
-            "num_active_sensors":       len(env.active_sensors),
-            "ue_tx_queue_bits":         sum(ue.tx_queue.total_bits for ue in env.active_ues),
-            "sensor_tx_queue_bits":     sum(s.tx_queue.total_bits  for s  in env.active_sensors),
-            "ue_tx_queue_jobs":         sum(ue.tx_queue.length     for ue in env.active_ues),
-            "sensor_tx_queue_jobs":     sum(s.tx_queue.length      for s  in env.active_sensors),
-            "jobs_generated":           st.jobs_generated,
-            "jobs_transmitted":         st.jobs_transmitted,
-            "jobs_processed":           st.jobs_processed,
-            "bits_transmitted":         st.bits_transmitted,
-            "cycles_processed":         st.cycles_processed,
-            "ue_bits_transmitted":      ue_bits,
-            "sensor_bits_transmitted":  sensor_bits,
-            "ue_cycles_processed":      ue_cycles,
-            "sensor_cycles_processed":  sensor_cycles,
-            "bw_split":                 bw_split,
-            "comp_split":               comp_split,
-            "reward":                   reward,
-            "observation":              observation.tolist() if hasattr(observation, 'tolist') else observation,
-            "mean_aoi":                 self._safe_mean([j.aoi  for j in step_ue_jobs if j.aoi  is not None]),
-            "mean_aori":                self._safe_mean([j.aori for j in step_ue_jobs if j.aori is not None]),
-            "mean_aosi":                self._safe_mean([j.aosi for j in step_ue_jobs if j.aosi is not None]),
+            "time":                             env.time,
+            "num_active_ues":                   len(env.active_ues),
+            "num_active_sensors":               len(env.active_sensors),
+            "num_active_isac_vehicles":         len(env.active_isac_vehicles),
+            "ue_tx_queue_bits":                 sum(ue.tx_queue.total_bits for ue in env.active_ues),
+            "sensor_tx_queue_bits":             sum(s.tx_queue.total_bits  for s  in env.active_sensors),
+            "isac_tx_queue_bits":               sum(v.tx_queue.total_bits  for v  in env.active_isac_vehicles),
+            "ue_tx_queue_jobs":                 sum(ue.tx_queue.length     for ue in env.active_ues),
+            "sensor_tx_queue_jobs":             sum(s.tx_queue.length      for s  in env.active_sensors),
+            "isac_tx_queue_jobs":               sum(v.tx_queue.length      for v  in env.active_isac_vehicles),
+            "jobs_generated":                   st.jobs_generated,
+            "jobs_transmitted":                 st.jobs_transmitted,
+            "jobs_processed":                   st.jobs_processed,
+            "bits_transmitted":                 st.bits_transmitted,
+            "cycles_processed":                 st.cycles_processed,
+            "ue_bits_transmitted":              ue_bits,
+            "sensor_bits_transmitted":          sensor_bits,
+            "isac_sensing_bits_transmitted":    isac_sensing_bits,
+            "isac_comm_bits_transmitted":       isac_comm_bits,
+            "ue_cycles_processed":              ue_cycles,
+            "sensor_cycles_processed":          sensor_cycles,
+            "isac_sensing_cycles_processed":    isac_sensing_cycles,
+            "isac_comm_cycles_processed":       isac_comm_cycles,
+            "bw_split":                         bw_split,
+            "comp_split":                       comp_split,
+            "reward":                           reward,
+            "observation":                      observation.tolist() if hasattr(observation, 'tolist') else observation,
+            "mean_aori":                        self._safe_mean([j.aori for j in step_isac_comm_jobs    if j.aori is not None]),
+            "mean_aosi":                        self._safe_mean([j.aosi for j in step_isac_comm_jobs    if j.aosi is not None]),
         }
         for key, val in updates.items():
             self.step_totals[key].append(val)

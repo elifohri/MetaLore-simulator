@@ -55,23 +55,24 @@ class SmartCityHandler(Handler):
         sync_base_reward = reward_cfg['sync_base_reward']
         discount_factor  = reward_cfg['discount_factor']
 
-        # UE jobs fully processed this timestep
-        step_ue_jobs = [
+        # ISAC_COMM jobs fully processed this timestep
+        step_comm_jobs = [
             job for job in env.job_tracker.step_completed_jobs
-            if job.entity_type == 'UE'
+            if job.job_type == 'ISAC_COMM'
         ]
 
         # Part 1: delay penalty — applied per job that exceeded the e2e threshold
         reward = sum(
             delay_penalty
-            for job in step_ue_jobs
+            for job in step_comm_jobs
             if job.aori > delay_threshold
         )
 
-        # Part 2: sync reward — discounted by how stale the sensor data was at job birth
+        # Part 2: sync reward — discounted by how stale the zone data was at request generation
         reward += sum(
             sync_base_reward * (discount_factor ** job.aosi)
-            for job in step_ue_jobs
+            for job in step_comm_jobs
+            if job.aosi is not None
         )
 
         return reward

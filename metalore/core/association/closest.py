@@ -21,6 +21,7 @@ class ClosestAssociation(Association):
         super().reset()
         self.connections_ue.clear()
         self.connections_sensor.clear()
+        self.connections_isac.clear()
         self.nearest_sensor.clear()
 
     @staticmethod
@@ -61,14 +62,16 @@ class ClosestAssociation(Association):
         for ue_idx, sensor_idx in enumerate(closest_indices):
             self.nearest_sensor[ue_list[ue_idx]] = sensor_list[sensor_idx]
 
-    def update_association(self, stations: Dict, users: Dict, sensors: Dict) -> None:
+    def update_association(self, stations: Dict, users: Dict, sensors: Dict, vehicles: Dict = None) -> None:
         """
         Perform full association update cycle.
 
         1. Associate UEs to closest BS
         2. Associate sensors to closest BS
-        3. Update each UE's nearest sensor
+        3. Associate ISAC vehicles to closest BS
+        4. Update each UE's nearest sensor
         """
         self._associate_to_bs(list(stations.values()), list(users.values()), self.connections_ue)
         self._associate_to_bs(list(stations.values()), list(sensors.values()), self.connections_sensor)
+        self._associate_to_bs(list(stations.values()), list(vehicles.values()), self.connections_isac)
         self._update_nearest_sensor(list(users.values()), list(sensors.values()))

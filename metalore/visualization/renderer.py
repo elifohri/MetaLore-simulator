@@ -114,6 +114,37 @@ class Renderer:
         colormap = self.colormap
         unorm = self.unorm
 
+        # Draw Age of Zone heatmap
+        if hasattr(env, 'zone_map'):
+            zm = env.zone_map
+            ages = env.zone_map.aozi(env.time).T  # shape (num_zones_y, num_zones_x) for imshow
+            ages_display = np.where(np.isinf(ages), np.nan, ages.astype(float))
+            aozi_cmap = cm.YlOrRd.copy()
+            aozi_cmap.set_bad(alpha=0)
+            ax.imshow(
+                ages_display,
+                extent=[0, env.width, 0, env.height],
+                origin='lower',
+                cmap=aozi_cmap,
+                alpha=0.4,
+                aspect='auto',
+                vmin=0,
+                vmax=env.EP_MAX_TIME,
+            )
+            inf_rgba = np.zeros((*ages.shape, 4))
+            inf_rgba[np.isinf(ages)] = [0.85, 0.85, 0.85, 0.7]
+            ax.imshow(inf_rgba, extent=[0, env.width, 0, env.height],
+                      origin='lower', aspect='auto')
+            for i in range(zm.num_zones_x + 1):
+                ax.axvline(i * zm.zone_w, color='gray', linewidth=0.4, alpha=0.4)
+            for j in range(zm.num_zones_y + 1):
+                ax.axhline(j * zm.zone_h, color='gray', linewidth=0.4, alpha=0.4)
+            for i in range(zm.num_zones_x):
+                for j in range(zm.num_zones_y):
+                    cx, cy = zm.zone_center(i, j)
+                    ax.text(cx, cy, str(ages[j, i]), ha='center', va='center',
+                            fontsize=7, color='black', alpha=0.8)
+
         # Plot inactive UEs as grayed out
         active_ue_set = set(env.utilities_ue.keys())
         for ue in env.users.values():
@@ -187,7 +218,7 @@ class Renderer:
             ax.plot(
                 sensor.x, sensor.y,
                 marker=SENSOR_SYMBOL,
-                markersize=10,
+                markersize=6,
                 markeredgewidth=0.1,
                 color="blue",
             )
@@ -201,6 +232,32 @@ class Renderer:
                 textcoords="offset points",
                 fontsize="8",
             )
+
+        for vehicle in env.active_isac_vehicles:
+            # Plot ISAC vehicles as triangles, colored by sensing mode
+            # Orange if sensing, teal if not sensing
+            color = "darkorange" if vehicle.sensing_mode else "teal"
+            ax.scatter(
+                vehicle.x, vehicle.y,
+                s=50, zorder=2,
+                color=color, marker="^",
+            )
+            ax.annotate(
+                vehicle.id,
+                xy=(vehicle.x, vehicle.y),
+                xytext=(0, -14),
+                ha="center",
+                va="top",
+                textcoords="offset points",
+                fontsize="8",
+            )
+            if vehicle.sensing_mode:
+                # Draw sensing range as a dashed circle, if the vehicle is in sensing mode
+                ax.add_patch(plt.Circle(
+                    (vehicle.x, vehicle.y), vehicle.sensing_range,
+                    fill=False, linestyle='--', edgecolor='darkorange',
+                    linewidth=0.8, alpha=0.6, zorder=1,
+                ))
 
         # Show border, hide ticks
         ax.get_xaxis().set_ticks([])
@@ -216,18 +273,18 @@ class Renderer:
 
     def render_metrics(self, env, ax: plt.Axes) -> None:
         """Render the info dashboard."""
-        aori_vals, aosi_vals, ue_data, sensor_data = [], [], 0.0, 0.0
+        aori_vals, aosi_vals, comm_data, sensing_data = [], [], 0.0, 0.0
         for job in env.job_tracker.completed_jobs:
-            if job.entity_type == 'UE':
+            if job.job_type == 'ISAC_COMM':
                 if job.aori is not None: aori_vals.append(job.aori)
                 if job.aosi is not None: aosi_vals.append(job.aosi)
-                ue_data += job.data_size
+                comm_data += job.data_size
             else:
-                sensor_data += job.data_size
+                sensing_data += job.data_size
         avg_aori = f"{sum(aori_vals)/len(aori_vals):.2f}" if aori_vals else "—"
         avg_aosi = f"{sum(aosi_vals)/len(aosi_vals):.2f}" if aosi_vals else "—"
-        total_ue = f"{ue_data:.2f}"
-        total_sensor = f"{sensor_data:.2f}"
+        total_ue = f"{comm_data:.2f}"
+        total_sensor = f"{sensing_data:.2f}"
 
         ax.get_xaxis().set_visible(False)
         ax.get_yaxis().set_visible(False)
@@ -239,8 +296,8 @@ class Renderer:
 
         table = ax.table(
             [[avg_aori, avg_aosi], [total_ue, total_sensor]],
-            rowLabels=["Avg", "Throughput"],
-            colLabels=["AoRI", "AoSI"],
+            rowLabels=["Avg", "Thpt"],
+            colLabels=["AoRI (comm)", "AoSI (comm)"],
             cellLoc="center",
             edges="B",
             loc="upper center",

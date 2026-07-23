@@ -55,11 +55,17 @@ class JobGenerator:
 
     def generate(self, entity, timestep: int, nearest_sensor_id: int = None) -> Job:
         """Construct a Job for an entity, enqueue it in the entity's tx_queue and return it."""
-        config = self._configs[entity.DEVICE_TYPE]
+        if entity.DEVICE_TYPE == 'ISAC':
+            job_type = 'ISAC_SENSING' if entity.sensing_mode else 'ISAC_COMM'
+        else:
+            job_type = entity.DEVICE_TYPE
+
+        config = self._configs[job_type]
         job = Job(
             job_id=self.next_id(),
             entity_id=entity.id,
             entity_type=entity.DEVICE_TYPE,
+            job_type=job_type,
             data_size=self.poisson(config['data_size_mean']),
             compute_size=self.poisson(config['compute_size_mean']),
             generated_at=timestep,
