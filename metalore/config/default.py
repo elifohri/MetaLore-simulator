@@ -14,7 +14,6 @@ from metalore.core.association.closest import ClosestAssociation
 from metalore.core.schedulers.resource_fair import ResourceFair
 from metalore.core.schedulers.round_robin import RoundRobin
 from metalore.handlers.smart_city import SmartCityHandler
-from metalore.handlers.smart_city_v2 import SmartCityHandlerV2
 from metalore.utils.logger import SimulationLogger
 
 
@@ -23,7 +22,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "environment": {
         "width": 200.0,                                 # Area width in meters
         "height": 200.0,                                # Area height in meters
-        "max_steps": 200,                               # Maximum timesteps per episode
+        "max_steps": 100,                               # Maximum timesteps per episode
         "seed": 8,                                      # Random seed (None for random)
         "reset_rng_episode": False,                     # Reset RNG each episode for reproducibility
         "num_ues": 3,                                   # Number of user equipments
@@ -105,8 +104,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
 
     "job_isac_comm": {
-        "data_size_mean": 30.0,                 # Mean service request data size in bits (small query via same RF)
-        "compute_size_mean": 3e9,               # Mean computation requirement for service request in CPU cycles (light twin lookup)
+        "data_size_mean": 50.0,                 # Mean service request data size in bits (small query via same RF)
+        "compute_size_mean": 5e9,               # Mean computation requirement for service request in CPU cycles (light twin lookup)
     },
 
     "scheduler": {
@@ -232,5 +231,5 @@ def isac_vehicle_config() -> Dict[str, Any]:
     config['environment']['num_isac_vehicles'] = 40
     config['environment']['num_sensors'] = 10
     config['environment']['arrival_vehicle'] = RandomVehicleCount
-    config['handler'] = SmartCityHandlerV2
+    config['handler'] = SmartCityHandler
     return config

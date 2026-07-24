@@ -125,6 +125,9 @@ class MetaLoreEnv(gymnasium.Env):
         self.job_generator = JobGenerator(**env_params, job_configs=job_config)
         self.job_tracker = JobTracker()
 
+        # Dropped jobs
+        self.dropped_jobs = 0
+
         # Zone map parameters
         zone_cfg = config['zones']
         self.num_zones_x = zone_cfg['num_zones_x']
@@ -154,6 +157,8 @@ class MetaLoreEnv(gymnasium.Env):
 
         # Reset time
         self.time = 0
+
+        self.dropped_jobs = 0
 
         # Reset all components
         self.arrival_ue.reset()
@@ -289,8 +294,11 @@ class MetaLoreEnv(gymnasium.Env):
         
         # 4. Process jobs at MEC servers (comp_split divides compute between UE and sensor jobs)
         for bs in self.stations.values():
-            cycles, done = process(bs.proc_queues[UserEquipment.DEVICE_TYPE], bs.compute_capacity * comp_split, timestep=self.time,
+            ue_queue = bs.proc_queues[UserEquipment.DEVICE_TYPE]
+            length_before = ue_queue.length
+            cycles, done = process(ue_queue, bs.compute_capacity * comp_split, timestep=self.time,
                 ready_fn=lambda job: job.requested_zone_idx is not None and self.zone_map.last_sensed[job.requested_zone_idx] >= 0)
+            self.dropped_jobs += length_before - ue_queue.length - len(done)
             self.job_tracker.on_processed(done, cycles)
             for job in done:
                 job.requested_zone_last_sensed_at = self.zone_map.last_sensed[job.requested_zone_idx]

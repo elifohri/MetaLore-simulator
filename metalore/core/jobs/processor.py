@@ -20,8 +20,8 @@ def process(queue: ProcessQueue, compute_capacity: float, timestep: int, ready_f
         queue:            The BS's processing queue (UE or sensor side).
         compute_capacity: Compute rate in CPU cycles/second allocated to this queue.
         timestep:         Current simulation timestep (used for job lifecycle timestamps).
-        ready_fn:         Job is only processed when ready_fn(job) returns True, 
-                          otherwise processing halts.
+        ready_fn:         Job is only processed when ready_fn(job) returns True,
+                          otherwise it is dropped (unserviceable, e.g. zone never sensed).
 
     Returns:
         cycles_consumed:  Total CPU cycles consumed this timestep.
@@ -36,7 +36,8 @@ def process(queue: ProcessQueue, compute_capacity: float, timestep: int, ready_f
         job = queue.head()
 
         if ready_fn is not None and not ready_fn(job):
-            break  # head job is waiting for context, halt until next timestep
+            queue.dequeue()  # zone never sensed — unserviceable, drop and check next job
+            continue
 
         if job.proc_start_at is None:
             job.proc_start_at = timestep

@@ -23,16 +23,16 @@ class RandomVehicleCount(Arrival):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.min_vehicles = 10
-        self.max_vehicles = 20
-        self.n_active = self.max_vehicles
+        self.min_entities = 10
+        self.max_entities = 30
+        self.n_active = self.max_entities
 
     def reset(self) -> None:
         super().reset()
-        self.n_active = int(self.rng.integers(self.min_vehicles, self.max_vehicles + 1))
+        self.n_active = int(self.rng.integers(self.min_entities, self.max_entities + 1))
 
     def arrival(self, entities: Dict) -> None:
-        """Randomly activate n_active vehicles; the rest never become active."""
+        """Randomly activate n_active entities; the rest stay inactive."""
         all_ids = list(entities.keys())
         n = min(self.n_active, len(all_ids))
         active_ids = set(
